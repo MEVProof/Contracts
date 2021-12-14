@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity >=0.4.22 <0.9.0;
 
 import "truffle/Assert.sol";
@@ -16,6 +17,10 @@ contract TestEscrow {
 
         uint depositValue = escrow.CheckDeposit(depositId);
         Assert.equal(depositValue, 1 ether, "depositValue should be 1 eth");
+
+        (uint256 depositReceipt, uint totalDeposits) = escrow.GetTotalValueOfDeposits();
+        Assert.equal(depositReceipt, 2, "receipts should be 2");
+        Assert.equal(totalDeposits, 1 ether, "total deposits should be 1 eth");
 
         bool withdrawalSuccessful = escrow.Withdraw(depositId);
         Assert.isTrue(withdrawalSuccessful, "Withdrawal should succeed");
