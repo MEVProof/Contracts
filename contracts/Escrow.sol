@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity >=0.4.22 <0.9.0;
 
 contract Escrow {
-    uint256 depositReceipt;
+    uint256 depositReceipt ;
     mapping(uint256 => uint) deposits;
     uint totalDeposits;
 
@@ -38,7 +38,9 @@ contract Escrow {
 
         deposits[depositId] = 0;
 
-        if (!payable(msg.sender).send(pendingAmount)) {
+        (bool success, ) = msg.sender.call{value:pendingAmount}("");
+        
+        if (!success) {
             deposits[depositId] = pendingAmount;
 
             emit WithdrawalFailed(depositId);
@@ -57,7 +59,7 @@ contract Escrow {
         return deposits[depositId];
     }
 
-    function GetTotalValueOfDeposits() public pure returns (uint256 depositReceipt, uint totalDeposits) {
+    function GetTotalValueOfDeposits() public view returns (uint256 depositReceipt_, uint totalDeposits_) {
         return (depositReceipt, totalDeposits);
     }
 }
