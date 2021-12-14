@@ -1,0 +1,7 @@
+{
+  "devDependencies": {
+    "@openzeppelin/test-helpers": "^0.5.15",
+    "chai-bn": "^0.3.0",
+    "truffle": "^5.4.24"
+  }
+}
