@@ -3,6 +3,11 @@ pragma solidity >=0.4.22 <0.9.0;
 
 
 contract Exchange {
+
+    enum Phase {
+        Commit
+    }
+
     enum Direction {
         Buy,
         Sell
@@ -14,6 +19,7 @@ contract Exchange {
         // Market or Withdraw
         uint256 price;
         uint256 maxTradeableWidth;
+        address owner;
     }
 
     struct CommitmentArgs {
@@ -40,9 +46,14 @@ contract Exchange {
     }
 
     uint256 constant _anyWidthValue = type(uint256).max;
+    uint256 constant _marketOrderValue = type(uint256).max;
 
     address _operator;
     uint256 _minTickSize = 1;
+
+    Phase _phase;
+    uint256 _lastPhaseChangeAtBlockHeight;
+    uint256 _currentAuctionNotional;
 
     Order[] _revealedSellOrders;
     Order[] _revealedBuyOrders;
@@ -66,6 +77,10 @@ contract Exchange {
 
     function Minimum(uint256 a, uint256 b) pure private returns (uint256) {
         return a < b ? a : b;
+    }
+
+    function Maximum(uint256 a, uint256 b) pure private returns (uint256) {
+        return a > b ? a : b;
     }
 
     function Abs(int x) private pure returns (int) {
@@ -193,7 +208,138 @@ contract Exchange {
     }
 
     function SettleOrders(uint256 clearingPrice, uint256 buyVolume, uint256 sellVolume) private {
+        // TODO: No need to recompute the working sets
+        // Produce working set of revealed orders
+        Order[] memory revealedSellOrders = new Order[](_revealedSellOrders.length); // Cannot create dynamic array here
+        Order[] memory revealedBuyOrders = new Order[](_revealedBuyOrders.length); // Cannot create dynamic array here
 
+        uint revealedSellOrderCount = 0;
+        uint revealedBuyOrderCount = 0;
+
+        for (uint i = 0; i < _revealedSellOrders.length; i++){
+            if (_revealedSellOrders[i].maxTradeableWidth > _wTight || _revealedSellOrders[i].maxTradeableWidth == _anyWidthValue) {
+                revealedSellOrders[revealedSellOrderCount++] = (_revealedSellOrders[i]); // Push not available
+            }
+        }
+
+        for (uint i = 0; i < _revealedBuyOrders.length; i++){
+            if (_revealedBuyOrders[i].maxTradeableWidth > _wTight || _revealedBuyOrders[i].maxTradeableWidth == _anyWidthValue) {
+                revealedBuyOrders[revealedBuyOrderCount++] = (_revealedBuyOrders[i]); // Push not available
+            }
+        }
+
+        buyVolume *= clearingPrice; // Convert sell volume to equivalent in A_tkn
+
+        // pro-rate buy orders at the min price above (or equal to) the clearing price
+        if (buyVolume > sellVolume) { 
+            uint256 proRate = type(uint256).max;
+
+            for (uint i = 0; i < revealedBuyOrderCount; i++) {
+                if (revealedBuyOrders[i].price >= clearingPrice) {
+                    proRate = Minimum(proRate, revealedBuyOrders[i].price);
+                }
+            }
+
+            uint256 sizeProRate = 0;
+            for (uint i = 0; i < revealedBuyOrderCount; i++) {
+                if (revealedBuyOrders[i].price == proRate) {
+                    sizeProRate += revealedBuyOrders[i].size;
+                }
+            }
+
+            for (uint i = 0; i < revealedBuyOrderCount; i++) {
+                Order memory order = revealedBuyOrders[i];
+                if (order.price == proRate) {
+                    
+                    // Return tokens not going to be exchanged
+
+                    uint256 transferQty = order.size * (1 - (buyVolume-sellVolume) / sizeProRate);
+                    
+                    // TODO: Handle return codes. Open question of what to do here since we can't just halt the process if one user can't receive transfers
+                    (payable(order.owner)).call{value:transferQty}("");
+
+                    order.size -= transferQty;
+                }
+            }
+        }
+
+        // pro-rate buy orders at the min price above (or equal to) the clearing price
+        if (sellVolume > buyVolume) { 
+            uint256 proRate = 0;
+
+            for (uint i = 0; i < revealedSellOrderCount; i++) {
+                if (revealedSellOrders[i].price <= clearingPrice) {
+                    proRate = Maximum(proRate, revealedSellOrders[i].price);
+                }
+            }
+
+            uint256 sizeProRate = 0;
+            for (uint i = 0; i < revealedSellOrderCount; i++) {
+                if (revealedSellOrders[i].price == proRate) {
+                    sizeProRate += revealedSellOrders[i].size;
+                }
+            }
+
+            for (uint i = 0; i < revealedSellOrderCount; i++) {
+                Order memory order = revealedSellOrders[i];
+
+                if (order.price == proRate) {                    
+                    // Return tokens not going to be exchanged
+
+                    uint256 transferQty = order.size * (1 - (sellVolume - buyVolume) / sizeProRate);
+                    
+                    // TODO: Should be returning B_tkn instead of ETH/A_tkn
+                    // TODO: Handle return codes.
+                    (payable(order.owner)).call{value:transferQty}("");
+
+                    order.size -= transferQty;
+                }
+            }
+        }
+
+        for (uint i = 0; i < revealedBuyOrderCount; i++) {
+            Order memory order = revealedBuyOrders[i];
+            
+            // Execute buy order if bid greater than clearing price
+            if (order.price >= clearingPrice || order.price == _marketOrderValue) {
+                uint256 tokenTradeSize = order.size * clearingPrice;
+
+                // TODO: Should be sending B_tkn instead of ETH/A_tkn
+                // TODO: Handle return codes.
+                (payable(order.owner)).call{value:tokenTradeSize}("");
+            } else {
+                // TODO: Handle return codes.
+                (payable(order.owner)).call{value:order.size}("");  
+            }
+        }
+
+        for (uint i = 0; i < revealedSellOrderCount; i++) {
+            Order memory order = revealedSellOrders[i];
+            
+            // Execute sell order if ask less than clearing price
+            if (order.price <= clearingPrice || order.price == _marketOrderValue) {
+                uint256 tokenTradeSize = order.size * clearingPrice;
+
+                // TODO: Handle return codes.
+                (payable(order.owner)).call{value:tokenTradeSize}("");
+            } else {
+                // TODO: Should be returning B_tkn instead of ETH/A_tkn
+                // TODO: Handle return codes.
+                (payable(order.owner)).call{value:order.size}("");  
+            }
+        }
+
+        _phase = Phase.Commit;
+        _currentAuctionNotional = 0;
+
+        // Possible we can avoid this and reuse the existing memory between auctions without 
+        // releasing and reacquiring it each time.
+        delete _revealedBuyOrders;
+        delete _revealedSellOrders;
+
+        _wTight = _anyWidthValue;
+
+        _lastPhaseChangeAtBlockHeight = block.number; // TODO block.number == blockheight
     }
 
     function EndPhase() public {
