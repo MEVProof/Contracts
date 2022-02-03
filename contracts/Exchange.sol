@@ -247,6 +247,8 @@ contract Exchange {
                 }
             }
 
+            sizeProRate *= clearingPrice;
+
             for (uint i = 0; i < revealedBuyOrderCount; i++) {
                 Order memory order = revealedBuyOrders[i];
                 if (order.price == proRate) {
@@ -318,7 +320,7 @@ contract Exchange {
             
             // Execute sell order if ask less than clearing price
             if (order.price <= clearingPrice || order.price == _marketOrderValue) {
-                uint256 tokenTradeSize = order.size * clearingPrice;
+                uint256 tokenTradeSize = order.size / clearingPrice;
 
                 // TODO: Handle return codes.
                 (payable(order.owner)).call{value:tokenTradeSize}("");
