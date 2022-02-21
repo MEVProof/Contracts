@@ -1,7 +1,9 @@
 {
   "devDependencies": {
+    "@openzeppelin/contracts": "^4.4.2",
     "@openzeppelin/test-helpers": "^0.5.15",
     "chai-bn": "^0.3.0",
+    "eth-gas-reporter": "^0.2.23",
     "truffle": "^5.4.24"
   }
 }

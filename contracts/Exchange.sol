@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity >=0.4.22 <0.9.0;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 contract Exchange {
-
     enum Phase {
         Commit
     }
@@ -48,6 +51,8 @@ contract Exchange {
     uint256 constant _anyWidthValue = type(uint256).max;
     uint256 constant _marketOrderValue = type(uint256).max;
 
+    uint256 constant _clearingPricePrecision = 1000;
+
     address _operator;
     uint256 _minTickSize = 1;
 
@@ -58,12 +63,14 @@ contract Exchange {
     Order[] _revealedSellOrders;
     Order[] _revealedBuyOrders;
 
-
     // Tightness of the spread
     uint256 _wTight;
 
-    constructor(){
+    IERC20 _token_b;
+
+    constructor(IERC20 token_b){
         _operator = msg.sender;
+        _token_b = token_b;
     }
 
 
@@ -72,19 +79,24 @@ contract Exchange {
     }
 
     function RevealClient(RevealArgs calldata reveal) public {
-        //_revealedOrders.push(reveal.order);
-    }
 
-    function Minimum(uint256 a, uint256 b) pure private returns (uint256) {
-        return a < b ? a : b;
-    }
-
-    function Maximum(uint256 a, uint256 b) pure private returns (uint256) {
-        return a > b ? a : b;
+        if (reveal.order.direction == Direction.Buy){
+            _revealedBuyOrders.push(reveal.order);
+        } else {
+            _revealedSellOrders.push(reveal.order);
+        }
     }
 
     function Abs(int x) private pure returns (int) {
         return x >= 0 ? x : -x;
+    }
+    
+    function MulByClearingPrice(uint256 value, uint256 clearingPrice) pure internal returns (uint256) {
+        return SafeMath.div(SafeMath.mul(SafeMath.mul(value, _clearingPricePrecision), clearingPrice), _clearingPricePrecision);
+    }
+
+    function DivByClearingPrice(uint256 value, uint256 clearingPrice) pure internal returns (uint256) {
+        return SafeMath.div(SafeMath.div(SafeMath.mul(value, _clearingPricePrecision), clearingPrice), _clearingPricePrecision);
     }
 
     function Settlement(uint256 clearingPrice, uint256 volumeSettled, int256 imbalance) public {
@@ -142,16 +154,16 @@ contract Exchange {
             }
         }
 
-        require(Minimum(buyVolume, sellVolume * clearingPrice) == volumeSettled);
-        require(buyVolume - (sellVolume * clearingPrice) == imbalance); // TODO: Fix data types
+        require(Math.min(buyVolume, MulByClearingPrice(sellVolume, clearingPrice)) == volumeSettled);
+        require((int256)(buyVolume) - (int256) (MulByClearingPrice(sellVolume, clearingPrice)) == imbalance); // TODO: Fix data types, safe cast
 
-        if (imbalance == 0){
+        if (imbalance == 0) {
             SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
 
         // As the auction is bid at CP, check if next price increment above clears higher volume OR smaller imbalance
         if (imbalance > 0) {
-            uint256 priceToCheck = clearingPrice + _minTickSize;
+            uint256 priceToCheck = clearingPrice + (_minTickSize * _clearingPricePrecision);
 
             uint256 buyVolumeNew = buyVolume;
             uint256 sellVolumeNew = sellVolume;
@@ -171,8 +183,8 @@ contract Exchange {
             buyVolumeNew *= priceToCheck;
 
             // If the next price clears less volume, or clears the same volume with a larger imbalance, the proposed CP is valid
-            require((Minimum(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
-                (Minimum(buyVolumeNew, sellVolumeNew) == volumeSettled && imbalance <= Abs(buyVolumeNew - sellVolumeNew))); // TODO: Fix data types
+            require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
+                (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && imbalance <= Abs((int256)(buyVolumeNew) - (int256)(sellVolumeNew)))); // TODO: Fix data types
 
             SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
@@ -198,8 +210,8 @@ contract Exchange {
 
             buyVolumeNew *= priceToCheck; // TODO: What is this?
 
-            require((Minimum(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
-                (Minimum(buyVolumeNew, sellVolumeNew) == volumeSettled && imbalance <= Abs(buyVolumeNew - sellVolumeNew))); // TODO: Fix data types
+            require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
+                (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && imbalance <= Abs((int256)(buyVolumeNew) - (int256)(sellVolumeNew)))); // TODO: Fix data types
 
             SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
@@ -228,7 +240,7 @@ contract Exchange {
             }
         }
 
-        buyVolume *= clearingPrice; // Convert sell volume to equivalent in A_tkn
+        buyVolume = MulByClearingPrice(buyVolume, clearingPrice); // Convert sell volume to equivalent in A_tkn
 
         // pro-rate buy orders at the min price above (or equal to) the clearing price
         if (buyVolume > sellVolume) { 
@@ -236,7 +248,7 @@ contract Exchange {
 
             for (uint i = 0; i < revealedBuyOrderCount; i++) {
                 if (revealedBuyOrders[i].price >= clearingPrice) {
-                    proRate = Minimum(proRate, revealedBuyOrders[i].price);
+                    proRate = Math.min(proRate, revealedBuyOrders[i].price);
                 }
             }
 
@@ -247,7 +259,7 @@ contract Exchange {
                 }
             }
 
-            sizeProRate *= clearingPrice;
+            sizeProRate = MulByClearingPrice(sizeProRate, clearingPrice);
 
             for (uint i = 0; i < revealedBuyOrderCount; i++) {
                 Order memory order = revealedBuyOrders[i];
@@ -271,7 +283,7 @@ contract Exchange {
 
             for (uint i = 0; i < revealedSellOrderCount; i++) {
                 if (revealedSellOrders[i].price <= clearingPrice) {
-                    proRate = Maximum(proRate, revealedSellOrders[i].price);
+                    proRate = Math.min(proRate, revealedSellOrders[i].price);
                 }
             }
 
@@ -290,9 +302,8 @@ contract Exchange {
 
                     uint256 transferQty = order.size * (1 - (sellVolume - buyVolume) / sizeProRate);
                     
-                    // TODO: Should be returning B_tkn instead of ETH/A_tkn
                     // TODO: Handle return codes.
-                    (payable(order.owner)).call{value:transferQty}("");
+                    _token_b.transfer(order.owner, transferQty);
 
                     order.size -= transferQty;
                 }
@@ -304,11 +315,11 @@ contract Exchange {
             
             // Execute buy order if bid greater than clearing price
             if (order.price >= clearingPrice || order.price == _marketOrderValue) {
-                uint256 tokenTradeSize = order.size * clearingPrice;
+                uint256 tokenTradeSize = MulByClearingPrice(order.size, clearingPrice); // order.size * clearingPrice;
 
-                // TODO: Should be sending B_tkn instead of ETH/A_tkn
-                // TODO: Handle return codes.
-                (payable(order.owner)).call{value:tokenTradeSize}("");
+                // TODO: Handle return codes.               
+                _token_b.transfer(order.owner, tokenTradeSize);
+
             } else {
                 // TODO: Handle return codes.
                 (payable(order.owner)).call{value:order.size}("");  
@@ -320,14 +331,13 @@ contract Exchange {
             
             // Execute sell order if ask less than clearing price
             if (order.price <= clearingPrice || order.price == _marketOrderValue) {
-                uint256 tokenTradeSize = order.size / clearingPrice;
+                uint256 tokenTradeSize = DivByClearingPrice(order.size, clearingPrice); // order.size / clearingPrice
 
                 // TODO: Handle return codes.
                 (payable(order.owner)).call{value:tokenTradeSize}("");
             } else {
-                // TODO: Should be returning B_tkn instead of ETH/A_tkn
                 // TODO: Handle return codes.
-                (payable(order.owner)).call{value:order.size}("");  
+                _token_b.transfer(order.owner, order.size);
             }
         }
 
@@ -341,14 +351,6 @@ contract Exchange {
 
         _wTight = _anyWidthValue;
 
-        _lastPhaseChangeAtBlockHeight = block.number; // TODO block.number == blockheight
-    }
-
-    function EndPhase() public {
-        require(msg.sender == _operator);
-    }
-
-    function Resolve() public {
-        require(msg.sender == _operator);
+        _lastPhaseChangeAtBlockHeight = block.number; // TODO block.number == blockheight?
     }
 }
