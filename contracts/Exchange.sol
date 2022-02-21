@@ -73,7 +73,6 @@ contract Exchange {
         _token_b = token_b;
     }
 
-
     function CommitClient(CommitmentArgs calldata commitment, ZKProof calldata proof) public {
 
     }
@@ -211,7 +210,7 @@ contract Exchange {
             buyVolumeNew *= priceToCheck; // TODO: What is this?
 
             require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
-                (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && imbalance <= Abs((int256)(buyVolumeNew) - (int256)(sellVolumeNew)))); // TODO: Fix data types
+                (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && Abs(imbalance) <= Abs((int256)(buyVolumeNew) - (int256)(sellVolumeNew)))); // TODO: Fix data types
 
             SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
