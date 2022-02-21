@@ -12,7 +12,7 @@ chai.use(chaiBn(BN));
 const ERC20 = artifacts.require("ERC20Mock");
 const Exchange = artifacts.require("Exchange");
 
-contract('ERC20', async function (accounts) {
+contract('Exchange', async function (accounts) {
     it('setup', async function () {
         sender = accounts[0];
         receiver = accounts[1];
@@ -20,13 +20,14 @@ contract('ERC20', async function (accounts) {
         // The bundled BN library is the same one web3 uses under the hood
         this.value = new BN(1);
 
-        this.erc20 = await ERC20.new("Token B", "TKNB", 10**7);
-        try {
-        this.exchange = await Exchange.new(this.erc20);
-        } catch(e){
-            console.error(e);
-            throw e;
-        }
+        this.erc20 = await ERC20.deployed();
+        this.exchange = await Exchange.deployed();
+
+        console.log(await this.erc20.totalSupply());
+
+        await this.erc20.mint(this.exchange.address, 1000);
+
+        console.log(await this.erc20.balanceOf(this.exchange.address));
     });
 
     // it('reverts when transferring tokens to the zero address', async function () {
