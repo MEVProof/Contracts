@@ -1,9 +1,22 @@
 {
+  "scripts": {
+    "build:circuit:compile": "npx circom circuits/provideEscrow.circom -o build/circuits/provideEscrow.json && npx snarkjs info -c build/circuits/provideEscrow.json",
+    "build:circuit:setup": "npx snarkjs setup --protocol groth -c build/circuits/provideEscrow.json --pk build/circuits/provideEscrow_proving_key.json --vk build/circuits/provideEscrow_verification_key.json",
+    "build:circuit:bin": "node node_modules/websnark/tools/buildpkey.js -i build/circuits/provideEscrow_proving_key.json -o build/circuits/provideEscrow_proving_key.bin",
+    "build:circuit:contract": "npx snarkjs generateverifier -v build/circuits/Verifier.sol --vk build/circuits/provideEscrow_verification_key.json",
+    "build:circuit": "mkdir -p build/circuits && npm run build:circuit:compile && npm run build:circuit:setup && npm run build:circuit:bin && npm run build:circuit:contract",
+    "build:contract": "npx truffle compile",
+    "build": "npm run build:circuit && npm run build:contract"
+  },
   "devDependencies": {
     "@openzeppelin/contracts": "^4.4.2",
     "@openzeppelin/test-helpers": "^0.5.15",
     "chai-bn": "^0.3.0",
     "eth-gas-reporter": "^0.2.23",
     "truffle": "^5.4.24"
+  },
+  "dependencies": {
+    "circom": "^0.0.35",
+    "circomlib": "git+https://github.com/tornadocash/circomlib.git#c372f14d324d57339c88451834bf2824e73bbdbc"
   }
 }
