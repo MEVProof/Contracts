@@ -48,6 +48,9 @@ contract Exchange {
         uint _reserved;
     }
 
+    event SettlementEvent(uint256 clearingPrice, uint256 buyVolume, uint256 sellVolume);
+
+
     uint256 constant _anyWidthValue = type(uint256).max;
     uint256 constant _marketOrderValue = type(uint256).max;
 
@@ -60,8 +63,8 @@ contract Exchange {
     uint256 _lastPhaseChangeAtBlockHeight;
     uint256 _currentAuctionNotional;
 
-    Order[] _revealedSellOrders;
-    Order[] _revealedBuyOrders;
+    Order[] public _revealedSellOrders;
+    Order[]  public _revealedBuyOrders;
 
     // Tightness of the spread
     uint256 _wTight;
@@ -79,7 +82,7 @@ contract Exchange {
 
     function RevealClient(RevealArgs calldata reveal) public {
 
-        if (reveal.order.direction == Direction.Buy){
+        if (reveal.order.direction == Direction.Buy) {
             _revealedBuyOrders.push(reveal.order);
         } else {
             _revealedSellOrders.push(reveal.order);
@@ -100,6 +103,7 @@ contract Exchange {
 
     function Settlement(uint256 clearingPrice, uint256 volumeSettled, int256 imbalance) public {
         // Deposit bounty
+        require(_revealedSellOrders.length + _revealedBuyOrders.length > 0, "No orders");
 
         // Produce working set of revealed orders
         Order[] memory revealedSellOrders = new Order[](_revealedSellOrders.length); // Cannot create dynamic array here
@@ -135,7 +139,7 @@ contract Exchange {
             }
         }
 
-        require(volumeSettled > 0 || (minSellPrice < maxBuyPrice)); // TODO: Min sell less than max bid if no trades?
+        require(volumeSettled > 0 || (minSellPrice < maxBuyPrice), "req 1"); // TODO: Min sell less than max bid if no trades?
 
         // Compute buyVolume and sellVolume
         uint256 buyVolume = 0;
@@ -153,15 +157,15 @@ contract Exchange {
             }
         }
 
-        require(Math.min(buyVolume, MulByClearingPrice(sellVolume, clearingPrice)) == volumeSettled);
-        require((int256)(buyVolume) - (int256) (MulByClearingPrice(sellVolume, clearingPrice)) == imbalance); // TODO: Fix data types, safe cast
+        require(Math.min(buyVolume, MulByClearingPrice(sellVolume, clearingPrice)) == volumeSettled, "req 2");        
+        require((int256)(buyVolume) - (int256) (MulByClearingPrice(sellVolume, clearingPrice)) == imbalance, "req 3"); // TODO: Fix data types, safe cast
 
         if (imbalance == 0) {
             SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
 
         // As the auction is bid at CP, check if next price increment above clears higher volume OR smaller imbalance
-        if (imbalance > 0) {
+        else if (imbalance > 0) {
             uint256 priceToCheck = clearingPrice + (_minTickSize * _clearingPricePrecision);
 
             uint256 buyVolumeNew = buyVolume;
@@ -189,7 +193,7 @@ contract Exchange {
         }
 
         // As the auction is offered at CP, check if next price increment below clears higher volume OR smaller imbalance
-        if (imbalance < 0) {
+        else if (imbalance < 0) {
             uint256 priceToCheck = clearingPrice - _minTickSize;
 
             uint256 buyVolumeNew = buyVolume;
@@ -219,6 +223,8 @@ contract Exchange {
     }
 
     function SettleOrders(uint256 clearingPrice, uint256 buyVolume, uint256 sellVolume) private {
+        emit SettlementEvent(clearingPrice, buyVolume, sellVolume);
+
         // TODO: No need to recompute the working sets
         // Produce working set of revealed orders
         Order[] memory revealedSellOrders = new Order[](_revealedSellOrders.length); // Cannot create dynamic array here
