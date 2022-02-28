@@ -68,9 +68,7 @@ contract("ClientAndMM", async function (accounts) {
 
   const deposit = generateDeposit();
   const newDeposit = generateDeposit();
-  const order = new Utils.Order(true, 500, rbigint(3).toString(), rbigint(2).toString(), pawn);
-
-  console.log(order);
+  const order = new Utils.Order(true, 500, 100, 10000, pawn);
 
   let proof= rbigint(31).toString();
   let root= rbigint(31).toString();
@@ -83,10 +81,10 @@ contract("ClientAndMM", async function (accounts) {
         };
 
   const market={
-        _bidPrice: rbigint(3).toString(),
-        _bidSize: '1000',
-        _offerPrice:  rbigint(3).toString(),
-        _offerSize:  '1000',
+        _bidPrice: '99',
+        _bidSize: '10000',
+        _offerPrice:  '100',
+        _offerSize:  '10',
         _owner: bishop,
     };
 
@@ -100,16 +98,16 @@ contract("ClientAndMM", async function (accounts) {
 
     await tknA.mint(pawn, 1000);
     await tknB.mint(knight, 1000);
-    await tknA.mint(bishop, 1000);
-    await tknB.mint(bishop, 1000);
+    await tknA.mint(bishop, 100000);
+    await tknB.mint(bishop, 100000);
   });
 
 
   it('approve transfer', async function () {
     await tknA.approve(inst.address, 1000, {from: pawn});
     await tknB.approve(inst.address, 1000, {from: relayer});
-    await tknA.approve(inst.address, 1000, {from: bishop});
-    await tknB.approve(inst.address, 1000, {from: bishop});
+    await tknA.approve(inst.address, 100000, {from: bishop});
+    await tknB.approve(inst.address, 100000, {from: bishop});
   });
 
   
@@ -117,11 +115,7 @@ contract("ClientAndMM", async function (accounts) {
    it("should register properly", async function () {  
     reg = await inst.Client_Register(deposit.commitment,{from: pawn, value: clientDepositAmount});  
 
-    reg = await inst._checkRegIDs(deposit.commitment);
-    console.log('legit registration',reg);
-
-    reg = await inst._checkRegIDs(web3.utils.asciiToHex('1'));
-    console.log('illegit registration', reg);
+    
   });
 
   it("should not register properly", async function () {
@@ -154,6 +148,23 @@ contract("ClientAndMM", async function (accounts) {
   it("should reveal MM market", async function () {
     
     reg = await inst.MM_Reveal(marketHash, market,   {from: bishop});
+
+  });
+
+  it("should settle orders", async function () {
+    
+    // console.log('contract balance A: ',await tknA.balanceOf(inst.address));
+    // console.log('contract balance B: ',await tknB.balanceOf(inst.address));
+
+    reg = expectEvent(await inst.Settlement('100', '500', '-500' ,   {from: bishop, gasLimit: 10000000}), "CheckerEvent1", { clearingPrice: new BN(100), buyVolume: new BN(500), sellVolume: new BN(10)});
+    
+    // console.log('post exchange pawn balance A: ',await tknA.balanceOf(pawn));
+    // console.log('post exchange pawn balance B: ',await tknB.balanceOf(pawn));
+    // console.log('post exchange bishop balance A: ',await tknA.balanceOf(bishop));
+    // console.log('post exchange bishop balance B: ',await tknB.balanceOf(bishop));
+    // console.log('contract balance A: ',await tknA.balanceOf(inst.address));
+    // console.log('contract balance B: ',await tknB.balanceOf(inst.address));
+
 
   });
 
