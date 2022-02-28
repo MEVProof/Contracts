@@ -4,7 +4,8 @@ pragma solidity >=0.4.22 <0.9.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-
+import "@openzeppelin/contracts/utils/math/Math.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 
 
@@ -41,7 +42,17 @@ contract ClientAndMM{
     uint256 _relayerFee;
     uint256 _tokenAFairValue;
 
+
     Phase _phase;
+
+
+    //Exchange variables from Padraic's code
+    uint256 _wTight=type(uint256).max;
+    uint256 constant _minTickSize = 1;
+    uint256 constant _clearingPricePrecision = 1000;
+    uint256 _currentAuctionNotional=0;
+    uint256 constant _anyWidthValue = type(uint256).max;
+    uint256 constant _marketOrderValue = type(uint256).max;
 
     enum Phase {
         Commit, Reveal, Resolution
@@ -101,15 +112,12 @@ contract ClientAndMM{
     }
 
     // should be nonReentrant 
-    
-
     function verifyProof(
         bytes32 proof,
         uint256[6] memory input
         ) public view returns (bool) {
         return true;
     }
-
 
     function Client_Commit( 
         bytes32 _orderHash,
@@ -162,10 +170,20 @@ contract ClientAndMM{
 
     // should be nonReentrant 
 
+
+    function Move_To_Commit_Phase( 
+        ) external returns (bool) {
+        _phase = Phase.Commit;
+        return true;
+    }
     function Move_To_Reveal_Phase( 
         ) external returns (bool) {
         _phase = Phase.Reveal;
-
+        return true;
+    }
+    function Move_To_Resolution_Phase( 
+        ) external returns (bool) {
+        _phase = Phase.Resolution;
         return true;
     }
     
@@ -311,6 +329,272 @@ contract ClientAndMM{
 
     function _getPlayerBalance() public view returns (uint256){
         return msg.sender.balance;
+    }
+
+
+    function Abs(int x) private pure returns (int) {
+        return x >= 0 ? x : -x;
+    }
+    
+    function MulByClearingPrice(uint256 value, uint256 clearingPrice) pure internal returns (uint256) {
+        return SafeMath.div(SafeMath.mul(SafeMath.mul(value, _clearingPricePrecision), clearingPrice), _clearingPricePrecision);
+    }
+
+    function DivByClearingPrice(uint256 value, uint256 clearingPrice) pure internal returns (uint256) {
+        return SafeMath.div(SafeMath.div(SafeMath.mul(value, _clearingPricePrecision), clearingPrice), _clearingPricePrecision);
+    }
+
+    function Settlement(uint256 clearingPrice, uint256 volumeSettled, int256 imbalance) public {
+        // Deposit bounty
+
+        // Produce working set of revealed orders
+        Order[] memory _revealedSellOrders = new Order[](_revealedSellOrders.length); // Cannot create dynamic array here
+        Order[] memory _revealedBuyOrders = new Order[](_revealedBuyOrders.length); // Cannot create dynamic array here
+
+        uint revealedSellOrderCount = 0;
+        uint revealedBuyOrderCount = 0;
+
+        for (uint i = 0; i < _revealedSellOrders.length; i++){
+            if (_revealedSellOrders[i]._maxTradeableWidth > _wTight || _revealedSellOrders[i]._maxTradeableWidth == _anyWidthValue) {
+                _revealedSellOrders[revealedSellOrderCount++] = (_revealedSellOrders[i]); // Push not available
+            }
+        }
+
+        for (uint i = 0; i < _revealedBuyOrders.length; i++){
+            if (_revealedBuyOrders[i]._maxTradeableWidth > _wTight || _revealedBuyOrders[i]._maxTradeableWidth == _anyWidthValue) {
+                _revealedBuyOrders[revealedBuyOrderCount++] = (_revealedBuyOrders[i]); // Push not available
+            }
+        }
+
+        // Compute max(buyOrders._price) and min(sellOrders._price)
+        uint256 maxBuyPrice = 0;
+        uint256 minSellPrice = type(uint256).max;
+
+        for (uint i = 0; i < revealedBuyOrderCount; i++) {
+            if (_revealedBuyOrders[i]._price > maxBuyPrice) {
+                maxBuyPrice = _revealedBuyOrders[i]._price;
+            }
+        }
+        for (uint i = 0; i < revealedSellOrderCount; i++) {
+            if (_revealedSellOrders[i]._price < minSellPrice) {
+                minSellPrice = _revealedSellOrders[i]._price;
+            }
+        }
+
+        require(volumeSettled > 0 || (minSellPrice < maxBuyPrice)); // TODO: Min sell less than max bid if no trades?
+
+        // Compute buyVolume and sellVolume
+        uint256 buyVolume = 0;
+        uint256 sellVolume = 0;        
+
+        for (uint i = 0; i < revealedBuyOrderCount; i++) {
+            if (_revealedBuyOrders[i]._price >= clearingPrice) {
+                buyVolume += _revealedBuyOrders[i]._size;
+            }
+        }
+
+        for (uint i = 0; i < revealedSellOrderCount; i++) {
+            if (_revealedSellOrders[i]._price <= clearingPrice) {
+                sellVolume += _revealedSellOrders[i]._size;
+            }
+        }
+
+        require(Math.min(buyVolume, MulByClearingPrice(sellVolume, clearingPrice)) == volumeSettled);
+        require((int256)(buyVolume) - (int256) (MulByClearingPrice(sellVolume, clearingPrice)) == imbalance); // TODO: Fix data types, safe cast
+
+        if (imbalance == 0) {
+            SettleOrders(clearingPrice, buyVolume, sellVolume);
+        }
+
+        // As the auction is bid at CP, check if next price increment above clears higher volume OR smaller imbalance
+        if (imbalance > 0) {
+            uint256 priceToCheck = clearingPrice + (_minTickSize * _clearingPricePrecision);
+
+            uint256 buyVolumeNew = buyVolume;
+            uint256 sellVolumeNew = sellVolume;
+
+            for (uint i = 0; i < revealedBuyOrderCount; i++) {
+                if (clearingPrice <= _revealedBuyOrders[i]._price && _revealedBuyOrders[i]._price < priceToCheck) {
+                    buyVolumeNew -= _revealedBuyOrders[i]._size;
+                }
+            }
+
+            for (uint i = 0; i < revealedSellOrderCount; i++) {
+                if (clearingPrice < _revealedSellOrders[i]._price && _revealedSellOrders[i]._price <= priceToCheck) {
+                    sellVolumeNew += _revealedSellOrders[i]._size;
+                }
+            }
+
+            buyVolumeNew *= priceToCheck;
+
+            // If the next price clears less volume, or clears the same volume with a larger imbalance, the proposed CP is valid
+            require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
+                (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && imbalance <= Abs((int256)(buyVolumeNew) - (int256)(sellVolumeNew)))); // TODO: Fix data types
+
+            SettleOrders(clearingPrice, buyVolume, sellVolume);
+        }
+
+        // As the auction is offered at CP, check if next price increment below clears higher volume OR smaller imbalance
+        if (imbalance < 0) {
+            uint256 priceToCheck = clearingPrice - _minTickSize;
+
+            uint256 buyVolumeNew = buyVolume;
+            uint256 sellVolumeNew = sellVolume;        
+
+            for (uint i = 0; i < revealedBuyOrderCount; i++) {
+                if (clearingPrice > _revealedBuyOrders[i]._price && _revealedBuyOrders[i]._price >= priceToCheck) {
+                    buyVolumeNew += _revealedBuyOrders[i]._size;
+                }
+            }
+
+            for (uint i = 0; i < revealedSellOrderCount; i++) {
+                if (clearingPrice >= _revealedSellOrders[i]._price && _revealedSellOrders[i]._price > priceToCheck) {
+                    sellVolumeNew -= _revealedSellOrders[i]._size;
+                }
+            }
+
+            buyVolumeNew *= priceToCheck; // TODO: What is this?
+
+            require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
+                (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && Abs(imbalance) <= Abs((int256)(buyVolumeNew) - (int256)(sellVolumeNew)))); // TODO: Fix data types
+
+            SettleOrders(clearingPrice, buyVolume, sellVolume);
+        }
+
+        // Return deposit + reward to caller
+    }
+
+    function SettleOrders(uint256 clearingPrice, uint256 buyVolume, uint256 sellVolume) private {
+        // TODO: No need to recompute the working sets
+        // Produce working set of revealed orders
+        Order[] memory _revealedSellOrders = new Order[](_revealedSellOrders.length); // Cannot create dynamic array here
+        Order[] memory _revealedBuyOrders = new Order[](_revealedBuyOrders.length); // Cannot create dynamic array here
+
+        uint revealedSellOrderCount = 0;
+        uint revealedBuyOrderCount = 0;
+
+        for (uint i = 0; i < _revealedSellOrders.length; i++){
+            if (_revealedSellOrders[i]._maxTradeableWidth > _wTight || _revealedSellOrders[i]._maxTradeableWidth == _anyWidthValue) {
+                _revealedSellOrders[revealedSellOrderCount++] = (_revealedSellOrders[i]); // Push not available
+            }
+        }
+
+        for (uint i = 0; i < _revealedBuyOrders.length; i++){
+            if (_revealedBuyOrders[i]._maxTradeableWidth > _wTight || _revealedBuyOrders[i]._maxTradeableWidth == _anyWidthValue) {
+                _revealedBuyOrders[revealedBuyOrderCount++] = (_revealedBuyOrders[i]); // Push not available
+            }
+        }
+
+        buyVolume = MulByClearingPrice(buyVolume, clearingPrice); // Convert sell volume to equivalent in A_tkn
+
+        // pro-rate buy orders at the min price above (or equal to) the clearing price
+        if (buyVolume > sellVolume) { 
+            uint256 proRate = type(uint256).max;
+
+            for (uint i = 0; i < revealedBuyOrderCount; i++) {
+                if (_revealedBuyOrders[i]._price >= clearingPrice) {
+                    proRate = Math.min(proRate, _revealedBuyOrders[i]._price);
+                }
+            }
+
+            uint256 sizeProRate = 0;
+            for (uint i = 0; i < revealedBuyOrderCount; i++) {
+                if (_revealedBuyOrders[i]._price == proRate) {
+                    sizeProRate += _revealedBuyOrders[i]._size;
+                }
+            }
+
+            sizeProRate = MulByClearingPrice(sizeProRate, clearingPrice);
+
+            for (uint i = 0; i < revealedBuyOrderCount; i++) {
+                Order memory order = _revealedBuyOrders[i];
+                if (order._price == proRate) {
+                    
+                    // Return tokens not going to be exchanged
+
+                    uint256 transferQty = order._size * (1 - (buyVolume-sellVolume) / sizeProRate);
+                    
+                    // TODO: Handle return codes. Open question of what to do here since we can't just halt the process if one user can't receive transfers
+                    (payable(order._owner)).call{value:transferQty}("");
+
+                    order._size -= transferQty;
+                }
+            }
+        }
+
+        // pro-rate buy orders at the min price above (or equal to) the clearing price
+        if (sellVolume > buyVolume) { 
+            uint256 proRate = 0;
+
+            for (uint i = 0; i < revealedSellOrderCount; i++) {
+                if (_revealedSellOrders[i]._price <= clearingPrice) {
+                    proRate = Math.min(proRate, _revealedSellOrders[i]._price);
+                }
+            }
+
+            uint256 sizeProRate = 0;
+            for (uint i = 0; i < revealedSellOrderCount; i++) {
+                if (_revealedSellOrders[i]._price == proRate) {
+                    sizeProRate += _revealedSellOrders[i]._size;
+                }
+            }
+
+            for (uint i = 0; i < revealedSellOrderCount; i++) {
+                Order memory order = _revealedSellOrders[i];
+
+                if (order._price == proRate) {                    
+                    // Return tokens not going to be exchanged
+
+                    uint256 transferQty = order._size * (1 - (sellVolume - buyVolume) / sizeProRate);
+                    
+                    // TODO: Handle return codes.
+                    _tokenA.transfer(order._owner, transferQty);
+
+                    order._size -= transferQty;
+                }
+            }
+        }
+
+        for (uint i = 0; i < revealedBuyOrderCount; i++) {
+            Order memory order = _revealedBuyOrders[i];
+            
+            // Execute buy order if bid greater than clearing price
+            if (order._price >= clearingPrice || order._price == _marketOrderValue) {
+                uint256 tokenTradeSize = MulByClearingPrice(order._size, clearingPrice); // order._size * clearingPrice;
+
+                // TODO: Handle return codes.               
+                _tokenB.transfer(order._owner, tokenTradeSize);
+
+            } else {
+                // TODO: Handle return codes.
+                (payable(order._owner)).call{value:order._size}("");  
+            }
+        }
+
+        for (uint i = 0; i < revealedSellOrderCount; i++) {
+            Order memory order = _revealedSellOrders[i];
+            
+            // Execute sell order if ask less than clearing price
+            if (order._price <= clearingPrice || order._price == _marketOrderValue) {
+                uint256 tokenTradeSize = DivByClearingPrice(order._size, clearingPrice); // order._size / clearingPrice
+
+                // TODO: Handle return codes.
+                //(payable(order._owner)).call{value:tokenTradeSize}("");
+            } else {
+                // TODO: Handle return codes.
+                //_token_b.transfer(order._owner, order._size);
+            }
+        }
+
+        _phase = Phase.Commit;
+        _currentAuctionNotional = 0;
+
+        // Possible we can avoid this and reuse the existing memory between auctions without 
+        // releasing and reacquiring it each time.
+        delete _revealedBuyOrders;
+        delete _revealedSellOrders;
+
+        _wTight = _anyWidthValue;
     }
 
     
