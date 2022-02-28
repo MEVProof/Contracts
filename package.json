@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "circom": "^0.0.35",
-    "circomlib": "git+https://github.com/tornadocash/circomlib.git#c372f14d324d57339c88451834bf2824e73bbdbc",
-    "snarkjs": "git+https://github.com/tornadocash/snarkjs.git#869181cfaf7526fe8972073d31655493a04326d5"
+    "circomlib": "git+https://git@github.com/tornadocash/circomlib.git#c372f14d324d57339c88451834bf2824e73bbdbc",
+    "snarkjs": "git+https://git@github.com/tornadocash/snarkjs.git#869181cfaf7526fe8972073d31655493a04326d5"
   }
 }
