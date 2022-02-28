@@ -186,6 +186,16 @@ contract ClientAndMM{
         _phase = Phase.Resolution;
         return true;
     }
+
+    event OrderHashed(Order order, bytes32 hashed, bytes32 expectedHash);
+
+    function HashOrderTest(Order memory _order, bytes32 expectedHash) public returns (bytes32 hashed) {
+        hashed = keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner));
+        emit OrderHashed(_order, hashed, expectedHash);
+
+        //require(keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner)) == _orderHash, "order does not match commitment");
+
+    }
     
     function Client_Reveal( 
         bytes32 _orderHash,
@@ -194,19 +204,19 @@ contract ClientAndMM{
         uint256 _randomness,
         bytes32 _regId,
         bytes32 _newRegId
-        ) external payable returns (bool){
+        ) external payable returns (bool) {
+
+
+        HashOrderTest(_order, _orderHash);
 
         require(_phase== Phase.Reveal, "Phase should be Reveal");
         require(hash(abi.encodePacked([_nullifier, _randomness])) == _regId, "secrets don't match registration ID");
         // this should hash all order information. Ensure abi.encodePacked maps uniquely.
-        require(hash(abi.encodePacked([_order._isBuyOrder?1:0, _order._size, _order._price, _order._maxTradeableWidth])) == _orderHash, "order does not match commitment"); 
-
-        require(_registrations[_regId], "The registration doesn't exist");
-
 
         require(_committedOrders[_orderHash], "order not committed");
+        require(keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner)) == _orderHash, "order does not match commitment");
 
-        
+        require(_registrations[_regId], "The registration doesn't exist");        
         
         // order is a buy order
         if (_order._isBuyOrder) {

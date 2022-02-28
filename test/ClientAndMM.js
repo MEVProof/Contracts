@@ -1,6 +1,5 @@
 const CnM = artifacts.require("ClientAndMM");
 
-
 const {
   //  BN,           // Big Number support
   constants,    // Common constants, like the zero address and largest integers
@@ -24,7 +23,9 @@ const TokenB = artifacts.require("TokenB");
 
 // this stuff is used in the Torndado tests
 const snarkjs = require('snarkjs')
-const circomlib = require('circomlib')
+const circomlib = require('circomlib');
+const Utils = require('./Utils');
+
 const pedersenHash = (data) => circomlib.babyJub.unpackPoint(circomlib.pedersenHash.hash(data))[0]
 const rbigint = (nbytes) => snarkjs.bigInt.leBuff2int(crypto.randomBytes(nbytes))
 const toFixedHex = (number, length = 32) =>
@@ -67,24 +68,15 @@ contract("ClientAndMM", async function (accounts) {
 
   const deposit = generateDeposit();
   const newDeposit = generateDeposit();
-  const order={
-        _isBuyOrder: '1',
-        _size: '500',
-        _price:  rbigint(3).toString(),
-        _maxTradeableWidth:  rbigint(2).toString(),
-        _owner: pawn,
-    };
-
+  const order = new Utils.Order(true, 500, rbigint(3).toString(), rbigint(2).toString(), pawn);
 
   console.log(order);
 
   let proof= rbigint(31).toString();
   let root= rbigint(31).toString();
   
-  const orderPreimage = web3.eth.abi.encodeParameters(['uint256','uint256','uint256','uint256'],[order._isBuyOrder, order._size,order._price,order._maxTradeableWidth]);
-  const orderHash= web3.utils.soliditySha3(orderPreimage);
   const clientCommitInput = {
-        _orderHash:  orderHash,
+        _orderHash:  order.GetPreimage(),
         _proof: web3.eth.abi.encodeParameter('uint256',proof),
         _root: web3.eth.abi.encodeParameter('uint256',root),
         _nullifierHash: web3.utils.soliditySha3(deposit.nullifier),
@@ -101,12 +93,11 @@ contract("ClientAndMM", async function (accounts) {
   const marketPreimage = web3.eth.abi.encodeParameters(['uint256','uint256','uint256','uint256'],[market._bidPrice, market._bidSize,market._offerPrice,market._offerSize])
   const marketHash= web3.utils.soliditySha3(marketPreimage);
 
-
-  it("should be deployed", async function () {
-    
+  it("should be deployed", async function () {    
     inst = await CnM.deployed();
     tknA = await TokenA.deployed(); 
     tknB = await TokenB.deployed();
+
     await tknA.mint(pawn, 1000);
     await tknB.mint(knight, 1000);
     await tknA.mint(bishop, 1000);
@@ -123,11 +114,8 @@ contract("ClientAndMM", async function (accounts) {
 
   
 
-   it("should register properly", async function () {
-    
-
-    reg = await inst.Client_Register(deposit.commitment,{from: pawn, value: clientDepositAmount});
-  
+   it("should register properly", async function () {  
+    reg = await inst.Client_Register(deposit.commitment,{from: pawn, value: clientDepositAmount});  
 
     reg = await inst._checkRegIDs(deposit.commitment);
     console.log('legit registration',reg);
@@ -140,10 +128,8 @@ contract("ClientAndMM", async function (accounts) {
     reg = await expectRevert(inst.Client_Register(web3.utils.asciiToHex('0'),{from: pawn, value: oneEth}), 'Client register must deposit escrow + relayer fee');
   });
 
-
-
   it("should add client commitment:", async function () {
-    reg = await inst.Client_Commit(clientCommitInput._orderHash, clientCommitInput._proof, clientCommitInput._root, clientCommitInput._nullifierHash,  {from: relayer});
+    reg = await inst.Client_Commit(order.GetPreimage(), clientCommitInput._proof, clientCommitInput._root, clientCommitInput._nullifierHash,  {from: relayer});
   });
 
   it("should add MM commitment:", async function () {
@@ -156,8 +142,8 @@ contract("ClientAndMM", async function (accounts) {
   });
 
   it("should reveal client order", async function () {
-    reg = await inst.Client_Reveal(orderHash, order, deposit.nullifier, deposit.randomness, deposit.commitment, newDeposit.commitment, {from: pawn, value: oneEth});
-    });
+    reg = await inst.Client_Reveal(order.GetPreimage(), order.Unwrap(), deposit.nullifier, deposit.randomness, deposit.commitment, newDeposit.commitment, {from: pawn, value: oneEth});
+  });
 
 
   // it("should not reveal 2nd client order", async function () {
