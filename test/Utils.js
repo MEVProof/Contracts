@@ -1,4 +1,4 @@
-class OrderJS {
+class Order {
     constructor(isBuyOrder, size, price, maxTradeableWidth, account) {
         this._isBuyOrder = isBuyOrder;
         this._size = size;
@@ -27,4 +27,4 @@ class OrderJS {
     }
 }
 
-exports.Order = OrderJS;
+exports.Order = Order;
