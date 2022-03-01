@@ -48,7 +48,7 @@ contract ClientAndMM{
 
     //Exchange variables from Padraic's code
     uint256 _wTight=type(uint256).max;
-    uint256 constant _minTickSize = 1;
+    uint256 public constant _minTickSize = 1;
     uint256 constant _clearingPricePrecision = 1000;
     uint256 _currentAuctionNotional=0;
     uint256 constant _anyWidthValue = type(uint256).max;
@@ -74,6 +74,9 @@ contract ClientAndMM{
         address _owner;
     }
 
+    function getMinTickSize() public view returns (uint256) {
+         return _minTickSize;
+    }
 
     function hash(
         bytes memory input
