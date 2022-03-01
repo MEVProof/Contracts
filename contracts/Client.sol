@@ -1,22 +1,19 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity >=0.4.22 <0.9.0;
 
-
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
+import "./MerkleTreeWithHistory.sol";
 
+interface IVerifier {
+    function verifyProof(bytes calldata proof, uint[6] calldata inputs) external view returns (bool r);
+}
 
-
-
-
-contract ClientAndMM{
-    
-    // Tornado initialisation variables
-    //using SafeERC20 for IERC20;
-    //was IERC20
+contract ClientAndMM is MerkleTreeWithHistory {
+    IVerifier public immutable _verifier;
     IERC20 public _tokenA;
     IERC20 public _tokenB;
 
@@ -84,8 +81,10 @@ contract ClientAndMM{
          return bytes32(keccak256(input));
     }
 
-    constructor(IERC20 token_a, IERC20 token_b){
+    uint32 public constant _merkleTreeHeight = 20;
 
+    constructor(IVerifier verifier, IHasher hasher, IERC20 token_a, IERC20 token_b) MerkleTreeWithHistory(_merkleTreeHeight, hasher){
+        _verifier = verifier;
         _tokenA = token_a;
         _tokenB = token_b;
 
@@ -107,34 +106,33 @@ contract ClientAndMM{
 
     // should be nonReentrant 
 
+    event Deposit(bytes32 indexed commitment, uint32 leafIndex, uint256 timestamp);
+
     function Client_Register(bytes32 _regId) public payable returns (bool) {
         require(msg.value >= (_escrowClient + _relayerFee), "Client register must deposit escrow + relayer fee");
         require(!_registrations[_regId], "Registration ID already taken");
-        _registrations[_regId] = true;
-        return true;
-    }
 
-    // should be nonReentrant 
-    function verifyProof(
-        bytes32 proof,
-        uint256[6] memory input
-        ) public view returns (bool) {
+        uint32 insertedIndex = _insert(_regId);
+        _registrations[_regId] = true;
+
+        emit Deposit(_regId, insertedIndex, block.timestamp);
+
         return true;
     }
 
     function Client_Commit( 
         bytes32 _orderHash,
-        bytes32 _proof,
+        bytes calldata _proof,
         bytes32 _root,
         bytes32 _nullifierHash
         ) external payable returns (bool) {
         require(!_nullifierHashes[_nullifierHash], "The note has been already spent");
         require(!_blacklistedNullifiers[_nullifierHash], "The note has been blacklisted");
         require(_phase==Phase.Commit, "Phase should be Commit" );
-        //require(isKnownRoot(_root), "Cannot find your merkle root"); 
+        require(isKnownRoot(_root), "Cannot find your merkle root"); 
         // Make sure to use a recent one
         require(
-            verifyProof(
+            _verifier.verifyProof(
                 _proof,
                 [uint256(_root), 
                 uint256(_nullifierHash), 

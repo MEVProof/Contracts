@@ -1,6 +1,6 @@
 /* global artifacts */
-//const Verifier = artifacts.require('Verifier')
+const Verifier = artifacts.require('Verifier')
 
-module.exports = function (deployer) {
-  //deployer.deploy(Verifier)
+module.exports = async function (deployer) {
+  await deployer.deploy(Verifier)
 }

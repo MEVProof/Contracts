@@ -1,4 +1,17 @@
-const snarkjs = require('snarkjs')
+const snarkjs = require('snarkjs');
+const circomlib = require('circomlib');
+
+/** Generate random number of specified byte length */
+const rbigint = nbytes => snarkjs.bigInt.leBuff2int(crypto.randomBytes(nbytes))
+
+/** Compute pedersen hash */
+const pedersenHash = data => circomlib.babyJub.unpackPoint(circomlib.pedersenHash.hash(data))[0]
+
+/** BigNumber to hex string of specified length */
+function toHex(number, length = 32) {
+    const str = number instanceof Buffer ? number.toString('hex') : snarkjs.bigInt(number).toString(16)
+    return '0x' + str.padStart(length * 2, '0')
+}
 
 class Order {
     constructor(isBuyOrder, size, price, maxTradeableWidth, account) {
@@ -57,22 +70,53 @@ class MarketMakerOrder {
         }
     };
 }
-
-const rbigint = nbytes => snarkjs.bigInt.leBuff2int(crypto.randomBytes(nbytes))
 class Deposit {
     constructor(nullifier, randomness) {              
-        this.nullifier = nullifier.toString();
-        this.randomness = randomness.toString();
+        this.nullifier = nullifier;
+        this.randomness = randomness;
 
-        // TODO: I think this is broken. nullifier and randomness are 31 bytes long not 32 - Padraic
-        this.commitment = web3.utils.soliditySha3(web3.eth.abi.encodeParameters(['uint256','uint256'], [this.nullifier, this.randomness] ));
-        this.nullifierHash = web3.utils.soliditySha3(this.nullifier)
+        this.nullifierHex = toHex(nullifier);
+        this.randomnessHex = toHex(randomness);
+
+        this.preimage = Buffer.concat([this.nullifier.leInt2Buff(31), this.randomness.leInt2Buff(31)]);
+
+        this.commitment = pedersenHash(this.preimage);
+        this.commitmentHex = toHex(this.commitment)
+
+        this.nullifierHash = pedersenHash(this.nullifier.leInt2Buff(31));
+        this.nullifierHashHex = toHex(this.nullifierHash);
       }
 }
 
 function GenerateDeposit() {
     return new Deposit(rbigint(31), rbigint(31));
 }
+
+async function generateMerkleProof(contract, deposit) {
+    // Get all deposit events from smart contract and assemble merkle tree from them
+    console.log('Getting current state from tornado contract')
+    const events = await contract.getPastEvents('Deposit', { fromBlock: 0, toBlock: 'latest' })
+    const leaves = events
+      .sort((a, b) => a.returnValues.leafIndex - b.returnValues.leafIndex) // Sort events in chronological order
+      .map(e => e.returnValues.commitment)
+    const tree = new merkleTree(MERKLE_TREE_HEIGHT, leaves)
+  
+    // Find current commitment in the tree
+    const depositEvent = events.find(e => e.returnValues.commitment === toHex(deposit.commitment))
+    const leafIndex = depositEvent ? depositEvent.returnValues.leafIndex : -1
+  
+    // Validate that our data is correct
+    const root = tree.root()
+    const isValidRoot = await contract.methods.isKnownRoot(toHex(root)).call()
+    const isSpent = await contract.methods.isSpent(toHex(deposit.nullifierHash)).call()
+    // assert(isValidRoot === true, 'Merkle tree is corrupted')
+    // assert(isSpent === false, 'The note is already spent')
+    // assert(leafIndex >= 0, 'The deposit is not found in the tree')
+  
+    // Compute merkle proof of our commitment
+    const { pathElements, pathIndices } = tree.path(leafIndex)
+    return { pathElements, pathIndices, root: tree.root() }
+  }
 
 exports.Order = Order;
 exports.MarketMakerOrder = MarketMakerOrder;

@@ -150,9 +150,9 @@ contract("ClientAndMM", async function (accounts) {
   const buyCommitInputs = generateClientCommitInfo(buyOrders, buyOrderDeposits);
   const sellCommitInputs = generateClientCommitInfo(sellOrders, sellOrderDeposits);
   const markets = generateMarkets(accounts);
-  console.log(buyOrders);
-  console.log(sellOrders);
-  console.log(markets);
+  // console.log(buyOrders);
+  // console.log(sellOrders);
+  // console.log(markets);
 
   const deposit = Utils.GenerateDeposit();
   const newDeposit = Utils.GenerateDeposit();
@@ -165,7 +165,7 @@ contract("ClientAndMM", async function (accounts) {
     _orderHash: order.GetSolidityHash(),
     _proof: web3.eth.abi.encodeParameter('uint256', proof),
     _root: web3.eth.abi.encodeParameter('uint256', root),
-    _nullifierHash: deposit.nullifierHash,
+    _nullifierHash: deposit.nullifierHashHex,
   };
 
   const market = new Utils.MarketMakerOrder(99, 10000, 100, 10, bishop);
@@ -191,7 +191,7 @@ contract("ClientAndMM", async function (accounts) {
   });
 
   it("should register properly", async function () {  
-    reg = await inst.Client_Register(deposit.commitment,{from: pawn, value: clientDepositAmount});  
+    reg = await inst.Client_Register(deposit.commitmentHex,{from: pawn, value: clientDepositAmount});  
   });
 
   it("should not register properly", async function () {
@@ -199,24 +199,24 @@ contract("ClientAndMM", async function (accounts) {
   });
 
   it("should add client commitment:", async function () {
-    reg = await inst.Client_Commit(order.GetSolidityHash(), clientCommitInput._proof, clientCommitInput._root, clientCommitInput._nullifierHash,  {from: relayer});
+    reg = await inst.Client_Commit(order.GetSolidityHash(), clientCommitInput._proof, clientCommitInput._root, clientCommitInput._nullifierHash,  {from: relayer, gasLimit: 10000000});
   });
 
-  it("should add MM commitment:", async function () {
-    reg = await inst.MM_Commit(market.GetSolidityHash(),  {from: bishop, value: tenEth});
-  });
+  // it("should add MM commitment:", async function () {
+  //   reg = await inst.MM_Commit(market.GetSolidityHash(),  {from: bishop, value: tenEth});
+  // });
 
-  it("should move to Reveal phase", async function () {
-    reg= await inst.Move_To_Reveal_Phase();
-  });
+  // it("should move to Reveal phase", async function () {
+  //   reg= await inst.Move_To_Reveal_Phase();
+  // });
 
-  it("should reveal client order", async function () {
-    reg = await inst.Client_Reveal(order.GetSolidityHash(), order.Unwrap(), deposit.nullifier, deposit.randomness, deposit.commitment, newDeposit.commitment, {from: pawn, value: oneEth});
-  });
+  // it("should reveal client order", async function () {
+  //   reg = await inst.Client_Reveal(order.GetSolidityHash(), order.Unwrap(), deposit.nullifierHex, deposit.randomnessHex, deposit.commitmentHex, newDeposit.commitmentHex, {from: pawn, value: oneEth});
+  // });
 
-  it("should reveal MM market", async function () {  
-    reg = await inst.MM_Reveal(market.GetSolidityHash(), market,   {from: bishop});
-  });
+  // it("should reveal MM market", async function () {  
+  //   reg = await inst.MM_Reveal(market.GetSolidityHash(), market,   {from: bishop});
+  // });
 
 
   // it('mint and approve tokens', async function () {

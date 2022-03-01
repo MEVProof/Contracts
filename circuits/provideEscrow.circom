@@ -28,8 +28,7 @@ template CommitmentHasher() {
 // Verifies that commitment that corresponds to given secret and nullifier is included in the merkle tree of deposits
 template ProvideEscrow(levels) {
     //signal input root;
-    signal input rootTokenA;
-    signal input rootTokenB;
+    signal input root;
     signal input nullifierHash;
     signal input recipient; // not taking part in any computations
     signal input relayer;  // not taking part in any computations
@@ -45,13 +44,6 @@ template ProvideEscrow(levels) {
     hasher.nullifier <== nullifier;
     hasher.secret <== secret;
     hasher.nullifierHash === nullifierHash;
-
-    component rootMux = DualMux();
-    rootMux.in[0] <== rootTokenA;
-    rootMux.in[1] <== rootTokenB;
-    rootMux.s <== tknChoice;
-
-    var root = rootMux.out[0];
 
     component tree = MerkleTreeChecker(levels);
     tree.leaf <== hasher.commitment;
