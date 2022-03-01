@@ -9,7 +9,7 @@ class Order {
         this._owner = account;
     }
 
-    GetPreimage() {
+    GetSolidityHash() {
         return web3.utils.soliditySha3(
             { t: 'bool', v: this._isBuyOrder },
             { t: 'uint256', v: this._size },
@@ -38,7 +38,7 @@ class MarketMakerOrder {
         this._owner = owner;
     }
 
-    GetPreimage() {
+    GetSolidityHash() {
         return web3.utils.soliditySha3(
             { t: 'uint256', v: this._bidPrice },
             { t: 'uint256', v: this._bidSize },

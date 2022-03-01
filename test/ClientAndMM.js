@@ -57,7 +57,7 @@ contract("ClientAndMM", async function (accounts) {
   let root= rbigint(31).toString();
   
   const clientCommitInput = {
-    _orderHash: order.GetPreimage(),
+    _orderHash: order.GetSolidityHash(),
     _proof: web3.eth.abi.encodeParameter('uint256', proof),
     _root: web3.eth.abi.encodeParameter('uint256', root),
     _nullifierHash: deposit.nullifierHash,
@@ -93,11 +93,11 @@ contract("ClientAndMM", async function (accounts) {
   });
 
   it("should add client commitment:", async function () {
-    reg = await inst.Client_Commit(order.GetPreimage(), clientCommitInput._proof, clientCommitInput._root, clientCommitInput._nullifierHash,  {from: relayer});
+    reg = await inst.Client_Commit(order.GetSolidityHash(), clientCommitInput._proof, clientCommitInput._root, clientCommitInput._nullifierHash,  {from: relayer});
   });
 
   it("should add MM commitment:", async function () {
-    reg = await inst.MM_Commit(market.GetPreimage(),  {from: bishop, value: tenEth});
+    reg = await inst.MM_Commit(market.GetSolidityHash(),  {from: bishop, value: tenEth});
   });
 
   it("should move to Reveal phase", async function () {
@@ -105,7 +105,7 @@ contract("ClientAndMM", async function (accounts) {
   });
 
   it("should reveal client order", async function () {
-    reg = await inst.Client_Reveal(order.GetPreimage(), order.Unwrap(), deposit.nullifier, deposit.randomness, deposit.commitment, newDeposit.commitment, {from: pawn, value: oneEth});
+    reg = await inst.Client_Reveal(order.GetSolidityHash(), order.Unwrap(), deposit.nullifier, deposit.randomness, deposit.commitment, newDeposit.commitment, {from: pawn, value: oneEth});
   });
 
 
@@ -116,7 +116,7 @@ contract("ClientAndMM", async function (accounts) {
   
   it("should reveal MM market", async function () {
     
-    reg = await inst.MM_Reveal(market.GetPreimage(), market,   {from: bishop});
+    reg = await inst.MM_Reveal(market.GetSolidityHash(), market,   {from: bishop});
 
   });
 
