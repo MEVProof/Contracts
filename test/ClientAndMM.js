@@ -80,16 +80,7 @@ contract("ClientAndMM", async function (accounts) {
         _nullifierHash: web3.utils.soliditySha3(deposit.nullifier),
         };
 
-  const market={
-        _bidPrice: '99',
-        _bidSize: '10000',
-        _offerPrice:  '100',
-        _offerSize:  '10',
-        _owner: bishop,
-    };
-
-  const marketPreimage = web3.eth.abi.encodeParameters(['uint256','uint256','uint256','uint256'],[market._bidPrice, market._bidSize,market._offerPrice,market._offerSize])
-  const marketHash= web3.utils.soliditySha3(marketPreimage);
+  const market = new Utils.MarketMakerOrder(99, 10000, 100, 10, bishop);
 
   it("should be deployed", async function () {    
     inst = await CnM.deployed();
@@ -127,7 +118,7 @@ contract("ClientAndMM", async function (accounts) {
   });
 
   it("should add MM commitment:", async function () {
-    reg = await inst.MM_Commit(marketHash,  {from: bishop, value: tenEth});
+    reg = await inst.MM_Commit(market.GetPreimage(),  {from: bishop, value: tenEth});
   });
 
 
@@ -147,7 +138,7 @@ contract("ClientAndMM", async function (accounts) {
   
   it("should reveal MM market", async function () {
     
-    reg = await inst.MM_Reveal(marketHash, market,   {from: bishop});
+    reg = await inst.MM_Reveal(market.GetPreimage(), market,   {from: bishop});
 
   });
 
@@ -170,7 +161,7 @@ contract("ClientAndMM", async function (accounts) {
 
 
   // it("should not reveal 2nd market", async function () {
-  //   reg = await expectRevert(inst.MM_Reveal(marketHash, market,   {from: bishop}), 'Second market from same player should not be possible');
+  //   reg = await expectRevert(inst.MM_Reveal(market.GetPreimage(), market,   {from: bishop}), 'Second market from same player should not be possible');
   //  });
 
  

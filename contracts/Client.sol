@@ -256,7 +256,7 @@ contract ClientAndMM{
         require(_phase== Phase.Reveal, "Phase should be Reveal");
 
         // this should hash all market information. Ensure abi.encodePacked maps uniquely.
-        require(hash(abi.encodePacked([_market._bidPrice,_market._bidSize,_market._offerPrice,_market._offerSize])) == _marketHash, "market does not match commitment"); 
+        require(hash(abi.encodePacked(_market._bidPrice, _market._bidSize, _market._offerPrice, _market._offerSize, _market._owner)) == _marketHash, "market does not match commitment"); 
 
         require(_committedMarkets[_marketHash], "Market not recorded");
         
