@@ -1,3 +1,5 @@
+const snarkjs = require('snarkjs')
+
 class Order {
     constructor(isBuyOrder, size, price, maxTradeableWidth, account) {
         this._isBuyOrder = isBuyOrder;
@@ -56,5 +58,23 @@ class MarketMakerOrder {
     };
 }
 
+const rbigint = nbytes => snarkjs.bigInt.leBuff2int(crypto.randomBytes(nbytes))
+class Deposit {
+    constructor(nullifier, randomness) {              
+        this.nullifier = nullifier.toString();
+        this.randomness = randomness.toString();
+
+        // TODO: I think this is broken. nullifier and randomness are 31 bytes long not 32 - Padraic
+        this.commitment = web3.utils.soliditySha3(web3.eth.abi.encodeParameters(['uint256','uint256'], [this.nullifier, this.randomness] ));
+        this.nullifierHash = web3.utils.soliditySha3(this.nullifier)
+      }
+}
+
+function GenerateDeposit() {
+    return new Deposit(rbigint(31), rbigint(31));
+}
+
 exports.Order = Order;
 exports.MarketMakerOrder = MarketMakerOrder;
+exports.Deposit = Deposit;
+exports.GenerateDeposit = GenerateDeposit;

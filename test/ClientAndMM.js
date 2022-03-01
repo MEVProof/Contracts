@@ -35,22 +35,6 @@ const toFixedHex = (number, length = 32) =>
     .padStart(length * 2, '0')
 const getRandomRecipient = () => rbigint(20)
 
-
-
-function generateDeposit() {
-  let deposit = {
-    nullifier: rbigint(31).toString(),
-    randomness: rbigint(31).toString(),
-    
-  }
-  
-  deposit.commitment = web3.utils.soliditySha3(web3.eth.abi.encodeParameters(['uint256','uint256'], [deposit.nullifier, deposit.randomness] ));
-  
-  return deposit;
-}
-
-
-
 contract("ClientAndMM", async function (accounts) {
   const oneEth = 1;
   const tenEth =10;
@@ -65,20 +49,19 @@ contract("ClientAndMM", async function (accounts) {
   let bishop = accounts[2];
   let knight = accounts[3];
 
-
-  const deposit = generateDeposit();
-  const newDeposit = generateDeposit();
+  const deposit = Utils.GenerateDeposit();
+  const newDeposit = Utils.GenerateDeposit();
   const order = new Utils.Order(true, 500, 100, 10000, pawn);
 
   let proof= rbigint(31).toString();
   let root= rbigint(31).toString();
   
   const clientCommitInput = {
-        _orderHash:  order.GetPreimage(),
-        _proof: web3.eth.abi.encodeParameter('uint256',proof),
-        _root: web3.eth.abi.encodeParameter('uint256',root),
-        _nullifierHash: web3.utils.soliditySha3(deposit.nullifier),
-        };
+    _orderHash: order.GetPreimage(),
+    _proof: web3.eth.abi.encodeParameter('uint256', proof),
+    _root: web3.eth.abi.encodeParameter('uint256', root),
+    _nullifierHash: deposit.nullifierHash,
+  };
 
   const market = new Utils.MarketMakerOrder(99, 10000, 100, 10, bishop);
 
@@ -101,12 +84,8 @@ contract("ClientAndMM", async function (accounts) {
     await tknB.approve(inst.address, 100000, {from: bishop});
   });
 
-  
-
-   it("should register properly", async function () {  
+  it("should register properly", async function () {  
     reg = await inst.Client_Register(deposit.commitment,{from: pawn, value: clientDepositAmount});  
-
-    
   });
 
   it("should not register properly", async function () {
@@ -120,7 +99,6 @@ contract("ClientAndMM", async function (accounts) {
   it("should add MM commitment:", async function () {
     reg = await inst.MM_Commit(market.GetPreimage(),  {from: bishop, value: tenEth});
   });
-
 
   it("should move to Reveal phase", async function () {
     reg= await inst.Move_To_Reveal_Phase();
