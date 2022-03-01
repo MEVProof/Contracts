@@ -1,6 +1,5 @@
 const CnM = artifacts.require("ClientAndMM");
 
-
 const {
   //  BN,           // Big Number support
   constants,    // Common constants, like the zero address and largest integers
@@ -29,9 +28,10 @@ const marketWidths = 5;
 const orderSize = 1000;
 
 // this stuff is used in the Torndado tests
-
-const snarkjs = require('snarkjs');
+const snarkjs = require('snarkjs')
 const circomlib = require('circomlib');
+const Utils = require('./Utils');
+
 const pedersenHash = (data) => circomlib.babyJub.unpackPoint(circomlib.pedersenHash.hash(data))[0]
 const rbigint = (nbytes) => snarkjs.bigInt.leBuff2int(crypto.randomBytes(nbytes))
 const toFixedHex = (number, length = 32) =>
@@ -40,8 +40,6 @@ const toFixedHex = (number, length = 32) =>
     .toString(16)
     .padStart(length * 2, '0')
 const getRandomRecipient = () => rbigint(20)
-
-
 
 function generateDeposit() {
   let deposit = {
@@ -52,6 +50,7 @@ function generateDeposit() {
   deposit.commitment = web3.utils.soliditySha3(web3.eth.abi.encodeParameters(['uint256','uint256'], [deposit.nullifier, deposit.randomness] ));
   return deposit;
 }
+
 function generateBuyOrders(accounts) {
   let buyOrders =[];
   for (let step = 0; step < numOrders; step++) {
@@ -65,6 +64,7 @@ function generateBuyOrders(accounts) {
   }
   return buyOrders;
 }
+
 function generateSellOrders(accounts) {
   let sellOrders =[];
   for (let step = numOrders; step < 2*numOrders; step++) {
@@ -78,6 +78,7 @@ function generateSellOrders(accounts) {
   }
   return sellOrders;
 }
+
 function generateDeposits() {
   let deposits=[];
   for (let step = 0; step < numOrders; step++) {
@@ -90,6 +91,7 @@ function generateDeposits() {
   }
   return deposits;
 }
+
 function generateClientCommitInfo(orders, deposits) {
   let commits=[]; 
   for (let step = 0; step < numOrders; step++) {
@@ -107,6 +109,7 @@ function generateClientCommitInfo(orders, deposits) {
   }
   return commits;
 }
+
 function generateMarkets(accounts) {
   let markets=[];
   for (let step = 2*numOrders; step <(2*numOrders)+ numMarkets; step++) {
@@ -125,7 +128,6 @@ function generateMarkets(accounts) {
   return markets;
 }
 
-
 contract("ClientAndMM", async function (accounts) {
   const oneEth = 1;
   const tenEth =10;
@@ -140,6 +142,7 @@ contract("ClientAndMM", async function (accounts) {
   let relayer = accounts[1];
   let bishop = accounts[2];
   let knight = accounts[3];
+
   const buyOrders = generateBuyOrders(accounts);
   const sellOrders = generateSellOrders(accounts);
   const buyOrderDeposits = generateDeposits();
@@ -151,40 +154,21 @@ contract("ClientAndMM", async function (accounts) {
   console.log(sellOrders);
   console.log(markets);
 
-  const deposit = generateDeposit();
-  const newDeposit = generateDeposit();
-  const order={
-        _isBuyOrder: '1',
-        _size: '500',
-        _price:  '100',
-        _maxTradeableWidth:  '10000',
-        _owner: pawn,
-    };
-
+  const deposit = Utils.GenerateDeposit();
+  const newDeposit = Utils.GenerateDeposit();
+  const order = new Utils.Order(true, 500, 100, 10000, pawn);
 
   let proof= rbigint(31).toString();
   let root= rbigint(31).toString();
   
-  const orderPreimage = web3.eth.abi.encodeParameters(['uint256','uint256','uint256','uint256'],[order._isBuyOrder, order._size,order._price,order._maxTradeableWidth]);
-  const orderHash= web3.utils.soliditySha3(orderPreimage);
   const clientCommitInput = {
-        _orderHash:  orderHash,
-        _proof: web3.eth.abi.encodeParameter('uint256',proof),
-        _root: web3.eth.abi.encodeParameter('uint256',root),
-        _nullifierHash: web3.utils.soliditySha3(deposit.nullifier),
-        };
+    _orderHash: order.GetSolidityHash(),
+    _proof: web3.eth.abi.encodeParameter('uint256', proof),
+    _root: web3.eth.abi.encodeParameter('uint256', root),
+    _nullifierHash: deposit.nullifierHash,
+  };
 
-  const market={
-        _bidPrice: '99',
-        _bidSize: '10000',
-        _offerPrice:  '100',
-        _offerSize:  '10',
-        _owner: bishop,
-    };
-
-  const marketPreimage = web3.eth.abi.encodeParameters(['uint256','uint256','uint256','uint256'],[market._bidPrice, market._bidSize,market._offerPrice,market._offerSize])
-  const marketHash= web3.utils.soliditySha3(marketPreimage);
-
+  const market = new Utils.MarketMakerOrder(99, 10000, 100, 10, bishop);
 
   it("should be deployed", async function () {
     inst = await CnM.deployed();
@@ -206,16 +190,20 @@ contract("ClientAndMM", async function (accounts) {
     await tknB.approve(inst.address, 100000, {from: bishop});
   });
 
-  it("should register properly", async function () {
-    reg = await inst.Client_Register(deposit.commitment,{from: pawn, value: clientDepositAmount});
+  it("should register properly", async function () {  
+    reg = await inst.Client_Register(deposit.commitment,{from: pawn, value: clientDepositAmount});  
+  });
+
+  it("should not register properly", async function () {
+    reg = await expectRevert(inst.Client_Register(web3.utils.asciiToHex('0'),{from: pawn, value: oneEth}), 'Client register must deposit escrow + relayer fee');
   });
 
   it("should add client commitment:", async function () {
-    reg = await inst.Client_Commit(clientCommitInput._orderHash, clientCommitInput._proof, clientCommitInput._root, clientCommitInput._nullifierHash,  {from: relayer});
+    reg = await inst.Client_Commit(order.GetSolidityHash(), clientCommitInput._proof, clientCommitInput._root, clientCommitInput._nullifierHash,  {from: relayer});
   });
 
   it("should add MM commitment:", async function () {
-    reg = await inst.MM_Commit(marketHash,  {from: bishop, value: tenEth});
+    reg = await inst.MM_Commit(market.GetSolidityHash(),  {from: bishop, value: tenEth});
   });
 
   it("should move to Reveal phase", async function () {
@@ -223,11 +211,11 @@ contract("ClientAndMM", async function (accounts) {
   });
 
   it("should reveal client order", async function () {
-    reg = await inst.Client_Reveal(orderHash, order, deposit.nullifier, deposit.randomness, deposit.commitment, newDeposit.commitment, {from: pawn, value: oneEth});
+    reg = await inst.Client_Reveal(order.GetSolidityHash(), order.Unwrap(), deposit.nullifier, deposit.randomness, deposit.commitment, newDeposit.commitment, {from: pawn, value: oneEth});
   });
 
-  it("should reveal MM market", async function () {
-    reg = await inst.MM_Reveal(marketHash, market,   {from: bishop});
+  it("should reveal MM market", async function () {  
+    reg = await inst.MM_Reveal(market.GetSolidityHash(), market,   {from: bishop});
   });
 
 
@@ -293,7 +281,7 @@ contract("ClientAndMM", async function (accounts) {
 
 
   // it("should not reveal 2nd market", async function () {
-  //   reg = await expectRevert(inst.MM_Reveal(marketHash, market,   {from: bishop}), 'Second market from same player should not be possible');
+  //   reg = await expectRevert(inst.MM_Reveal(market.GetPreimage(), market,   {from: bishop}), 'Second market from same player should not be possible');
   //  });
 
  
