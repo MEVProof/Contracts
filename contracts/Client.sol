@@ -48,7 +48,7 @@ contract ClientAndMM{
 
     //Exchange variables from Padraic's code
     uint256 _wTight=type(uint256).max;
-    uint256 public constant _minTickSize = 1;
+    uint256 constant _minTickSize =1;
     uint256 constant _clearingPricePrecision = 1000;
     uint256 _currentAuctionNotional=0;
     uint256 constant _anyWidthValue = type(uint256).max;
@@ -74,15 +74,7 @@ contract ClientAndMM{
         address _owner;
     }
 
-    function getMinTickSize() public view returns (uint256) {
-         return _minTickSize;
-    }
-
-    function hash(
-        bytes memory input
-        ) public view returns (bytes32) {
-         return bytes32(keccak256(input));
-    }
+    
 
     constructor(IERC20 token_a, IERC20 token_b){
 
@@ -354,6 +346,10 @@ contract ClientAndMM{
         return msg.sender.balance;
     }
 
+    function _getMinTickSize() public view returns (uint256){
+        return _minTickSize;
+    }
+
 
     function Abs(int256 x ) private pure returns (int256) {
         return x >= 0 ? x : -x;
@@ -369,10 +365,43 @@ contract ClientAndMM{
 
     event CheckerEvent1(uint256 clearingPrice, uint256 buyVolume, uint256 sellVolume);
 
-    
+    function _getNumBuyOrders() public view returns (uint256){
+        return _revealedBuyOrders.length;
+    }
+    function _getNumSellOrders() public view returns (uint256){
+        return _revealedSellOrders.length;
+    }
+    function _getWidthTight() public view returns (uint256){
+        return _wTight;
+    }
+
+    function _getBuyOrderPrice(uint index) public view returns (uint256){
+        return _revealedBuyOrders[index]._price;
+    }
+    function _getSellOrderPrice(uint index) public view returns (uint256){
+        return _revealedSellOrders[index]._price;
+    }
+    function _getBuyOrderSize(uint index) public view returns (uint256){
+        return _revealedBuyOrders[index]._size;
+    }
+    function _getSellOrderSize(uint index) public view returns (uint256){
+        return _revealedSellOrders[index]._size;
+    }
+    function _getBuyOrderWidth(uint index) public view returns (uint256){
+        return _revealedBuyOrders[index]._maxTradeableWidth;
+    }
+    function _getSellOrderWidth(uint index) public view returns (uint256){
+        return _revealedSellOrders[index]._maxTradeableWidth;
+    }
+
+    function hash(
+        bytes memory input
+        ) public view returns (bytes32) {
+         return bytes32(keccak256(input));
+    }
 
 
-    function Settlement(uint256 clearingPrice, uint256 volumeSettled, int256 imbalance) public {
+    function Settlement(uint256 clearingPrice, uint256 volumeSettled, int256 imbalance) public returns (bool) {
         // Deposit bounty
         require(_revealedSellOrders.length + _revealedBuyOrders.length > 0, "No orders");
 
@@ -448,7 +477,7 @@ contract ClientAndMM{
             require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
                 (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && imbalance <= Abs(int256(buyVolumeNew) - int256(sellVolumeNew))), "we're in trouble"); // TODO: Fix data types
 
-            SettleOrders(clearingPrice, buyVolume, sellVolume);
+            //SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
 
         // As the auction is offered at CP, check if next price increment below clears higher volume OR smaller imbalance
@@ -475,14 +504,14 @@ contract ClientAndMM{
             require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
                 (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && Abs(imbalance) <= Abs((int256)(buyVolumeNew) - (int256)(sellVolumeNew)))); // TODO: Fix data types
 
-            SettleOrders(clearingPrice, buyVolume, sellVolume);
+            //SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
-
+        return true;
         // Return deposit + reward to caller
     }
 
 
-       function SettleOrders(uint256 clearingPrice, uint256 buyVolume, uint256 sellVolume) private {
+    function SettleOrders(uint256 clearingPrice, uint256 buyVolume, uint256 sellVolume) private {
         
         uint revealedSellOrderCount = _revealedSellOrders.length;
         uint revealedBuyOrderCount = _revealedBuyOrders.length;
