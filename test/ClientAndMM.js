@@ -199,7 +199,14 @@ contract("ClientAndMM", async function (accounts) {
   });
 
   it("should add client commitment:", async function () {
-    reg = await inst.Client_Commit(order.GetSolidityHash(), clientCommitInput._proof, clientCommitInput._root, clientCommitInput._nullifierHash,  {from: relayer, gasLimit: 10000000});
+    let { proof, args } = await Utils.GenerateProofOfDeposit(inst, deposit, order.GetSolidityHash(), relayerAddress = relayer)
+
+    console.log(proof);
+    console.log(args);
+
+    reg = await inst.Client_Commit(proof, ...args, {from: relayer, gasLimit: 10000000});
+
+    assert.fail("Fail");
   });
 
   // it("should add MM commitment:", async function () {

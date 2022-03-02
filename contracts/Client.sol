@@ -120,29 +120,51 @@ contract ClientAndMM is MerkleTreeWithHistory {
         return true;
     }
 
-    function Client_Commit( 
+    event ClientCommitment(bytes _proof,
+        bytes32 _root,
+        bytes32 _nullifierHash,
         bytes32 _orderHash,
+        address payable _relayer,
+        uint256 _fee,
+        uint256 _refund);
+
+    function Client_Commit( 
         bytes calldata _proof,
         bytes32 _root,
-        bytes32 _nullifierHash
+        bytes32 _nullifierHash,
+        bytes32 _orderHash,
+        address payable _relayer,
+        uint256 _fee,
+        uint256 _refund
+
         ) external payable returns (bool) {
         require(!_nullifierHashes[_nullifierHash], "The note has been already spent");
         require(!_blacklistedNullifiers[_nullifierHash], "The note has been blacklisted");
         require(_phase==Phase.Commit, "Phase should be Commit" );
         require(isKnownRoot(_root), "Cannot find your merkle root"); 
         // Make sure to use a recent one
+
+        emit ClientCommitment(_proof, _root, _nullifierHash, _orderHash, _relayer, _fee, _refund);
+
+  //      return true;
+
         require(
             _verifier.verifyProof(
                 _proof,
                 [uint256(_root), 
                 uint256(_nullifierHash), 
                 uint256(_orderHash), 
-                uint256(uint160(msg.sender)), 
-                _relayerFee, 
-                _escrowClient]
+                uint256(uint160(address(_relayer))), 
+                _fee, 
+                _refund]
             ),
             "Invalid withdraw proof"
         );
+
+        // TODO: Do we want to allow commiting a new order using the same deposit? Eg amending an
+        // order before the end of the commit phase without burning a deposit?
+        // If so we'll need to rework the lines below - Padraic
+
         // record nullifier hash
         _nullifierHashes[_nullifierHash]= true;
 
