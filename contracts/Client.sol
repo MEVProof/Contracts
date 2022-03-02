@@ -441,7 +441,7 @@ contract ClientAndMM{
                 sellVolume += _revealedSellOrders[i]._size;
             }
         }
-        
+        uint ticker=0;
         emit CheckerEvent1(clearingPrice, buyVolume, sellVolume);
         
 
@@ -477,7 +477,7 @@ contract ClientAndMM{
             require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
                 (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && imbalance <= Abs(int256(buyVolumeNew) - int256(sellVolumeNew))), "we're in trouble"); // TODO: Fix data types
 
-            //SettleOrders(clearingPrice, buyVolume, sellVolume);
+            SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
 
         // As the auction is offered at CP, check if next price increment below clears higher volume OR smaller imbalance
@@ -504,22 +504,32 @@ contract ClientAndMM{
             require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
                 (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && Abs(imbalance) <= Abs((int256)(buyVolumeNew) - (int256)(sellVolumeNew)))); // TODO: Fix data types
 
-            //SettleOrders(clearingPrice, buyVolume, sellVolume);
+            SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
         return true;
         // Return deposit + reward to caller
     }
 
+    event HeresTrouble(uint checkNumber, uint256 returnToSender, uint256 remainder);
+
+    uint ticker=0;
+    event ContractBalanceCheck(uint checkNumber,uint256 tokenA, uint256 tokenB);
+   
 
     function SettleOrders(uint256 clearingPrice, uint256 buyVolume, uint256 sellVolume) private {
         
         uint revealedSellOrderCount = _revealedSellOrders.length;
         uint revealedBuyOrderCount = _revealedBuyOrders.length;
 
-        
+        uint256 problemNumber;
 
         
         sellVolume = sellVolume * clearingPrice; 
+
+        uint256 _aBalance = _tokenA.balanceOf(address(this));
+        uint256 _bBalance = _tokenB.balanceOf(address(this));
+        emit ContractBalanceCheck(ticker++, _tokenA.balanceOf(address(this)), _tokenB.balanceOf(address(this)));
+
         // pro-rate buy orders at the min price above (or equal to) the clearing price
         if (buyVolume > sellVolume) {
             
@@ -543,10 +553,10 @@ contract ClientAndMM{
                     
                     // Return tokens not going to be exchanged
 
-                    uint256 transferQty = DivideBy(_revealedBuyOrders[i]._size * (sizeProRate + sellVolume -buyVolume) , sizeProRate);
+                    uint256 transferQty = DivideBy(_revealedBuyOrders[i]._size * (buyVolume- sellVolume) , sizeProRate);
 
-                    _processOrderSettlement(_tokenA, transferQty, _revealedBuyOrders[i]._owner);
-
+                    _processOrderSettlement(_tokenA, Math.min(transferQty,_aBalance), _revealedBuyOrders[i]._owner);
+                    _aBalance= Math.max(_aBalance-transferQty,0);
                     _revealedBuyOrders[i]._size -= transferQty;
                 } 
             }
@@ -576,42 +586,72 @@ contract ClientAndMM{
                     // Return tokens not going to be exchanged
 
                     
-                    uint256 transferQty = DivideBy(_revealedSellOrders[i]._size * (sizeProRate*clearingPrice + buyVolume - sellVolume) , sizeProRate*clearingPrice);
+                    uint256 transferQty = DivideBy(_revealedSellOrders[i]._size * (sellVolume- buyVolume) , sizeProRate*clearingPrice);
                     
+
+        
+                    _revealedSellOrders[i]._size -= transferQty;
+                    
+                    //emit HeresTrouble(ticker++, transferQty, _revealedSellOrders[i]._size);
+
                     // TODO: Handle return codes.
                     _processOrderSettlement(_tokenB, transferQty, _revealedSellOrders[i]._owner);
-
-                    _revealedSellOrders[i]._size -= transferQty;
+                    _bBalance= Math.max(_bBalance-transferQty,0);
+                    emit ContractBalanceCheck(ticker++, _tokenA.balanceOf(address(this)), _tokenB.balanceOf(address(this)));
+                    
                 } 
             }
         }
-
+        
         for (uint i = 0; i < revealedBuyOrderCount; i++) {
-            Order memory order = _revealedBuyOrders[i];
             
             // Execute buy order if bid greater than clearing price
-            if (order._price >= clearingPrice || order._price == _marketOrderValue) {
-                uint256 tokenTradeSize = DivideBy(order._size, clearingPrice); // order.size / clearingPrice;
+            if (_revealedBuyOrders[i]._price >= clearingPrice || _revealedBuyOrders[i]._price == _marketOrderValue) {
+                uint256 tokenTradeSize = DivideBy(_revealedBuyOrders[i]._size, clearingPrice); // order.size / clearingPrice;
 
-                // TODO: Handle return codes.               
-                _processOrderSettlement(_tokenB, tokenTradeSize, order._owner);
-
-            } else if (order._price < clearingPrice) {
-                _processOrderSettlement(_tokenA, order._size, order._owner);
+                //emit HeresTrouble(ticker++, tokenTradeSize, _revealedBuyOrders[i]._size);
+                _processOrderSettlement(_tokenB, Math.min(tokenTradeSize,_bBalance), _revealedBuyOrders[i]._owner);
+                emit ContractBalanceCheck(ticker++, _tokenA.balanceOf(address(this)), _tokenB.balanceOf(address(this)));
+                if(_bBalance>tokenTradeSize){
+                    _bBalance -=tokenTradeSize;
+                } else {
+                    _bBalance=0;
+                }
+            } else if (_revealedBuyOrders[i]._price < clearingPrice) {
+                //return tokens to players not trading
+                _processOrderSettlement(_tokenA, Math.min(_revealedBuyOrders[i]._size,_aBalance), _revealedBuyOrders[i]._owner);
+                emit ContractBalanceCheck(ticker++, _tokenA.balanceOf(address(this)), _tokenB.balanceOf(address(this)));
+                if(_aBalance>_revealedBuyOrders[i]._size){
+                    _aBalance -=_revealedBuyOrders[i]._size;
+                } else {
+                    _aBalance=0;
+                }
+                
             }
         }
 
         for (uint i = 0; i < revealedSellOrderCount; i++) {
-            Order memory order = _revealedSellOrders[i];
-            
             // Execute sell order if ask less than clearing price
-            if (order._price <= clearingPrice || order._price == _marketOrderValue) {
-                uint256 tokenTradeSize = order._size* clearingPrice; // order.size / clearingPrice
+            if (_revealedSellOrders[i]._price <= clearingPrice || _revealedSellOrders[i]._price == _marketOrderValue) {
+                uint256 tokenTradeSize = _revealedSellOrders[i]._size* clearingPrice; // order.size / clearingPrice
 
-                // TODO: Handle return codes.
-                _processOrderSettlement(_tokenA, tokenTradeSize, order._owner);
-            } else if (order._price > clearingPrice) {
-                _processOrderSettlement(_tokenB, order._size, order._owner);
+                _processOrderSettlement(_tokenA, Math.min(tokenTradeSize,_aBalance), _revealedSellOrders[i]._owner);
+                emit ContractBalanceCheck(ticker++, _tokenA.balanceOf(address(this)), _tokenB.balanceOf(address(this)));
+                if(_aBalance>tokenTradeSize){
+                    _aBalance -=tokenTradeSize;
+                } else {
+                    _aBalance=0;
+                }
+            } else if (_revealedSellOrders[i]._price > clearingPrice) {
+                //return tokens to players not trading
+                _processOrderSettlement(_tokenB, Math.min(_revealedSellOrders[i]._size,_bBalance), _revealedSellOrders[i]._owner);
+                emit ContractBalanceCheck(ticker++, _tokenA.balanceOf(address(this)), _tokenB.balanceOf(address(this)));
+                _bBalance= Math.max(_bBalance-_revealedSellOrders[i]._size,0);
+                if(_bBalance>_revealedSellOrders[i]._size){
+                    _bBalance -=_revealedSellOrders[i]._size;
+                } else {
+                    _bBalance=0;
+                }
             }
         }
 

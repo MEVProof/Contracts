@@ -16,11 +16,16 @@ chai.use(chaiBn(BN));
 
 const expect = chai.expect;
 
+var seed = 1;
+function random() {
+    var x = Math.sin(seed++) * 10000;
+    return x - Math.floor(x);
+}
 
 const TokenA = artifacts.require("TokenA");
 const TokenB = artifacts.require("TokenB");
 
-
+const precision = 1000;
 const fairPrice = 100;
 const numOrders = 4;
 const numMarkets = 2;
@@ -55,9 +60,15 @@ function generateDeposit() {
 function generateBuyOrders(accounts) {
   let buyOrders =[];
   for (let step = 0; step < numOrders; step++) {
+    // buyOrders.push(new  Utils.Order( true, 
+    //   Math.floor(Math.random() * orderSize*2),
+    //   Math.floor(Math.random() * fairPrice*2),
+    //   10000,
+    //   accounts[step]
+    //   ));
     buyOrders.push(new  Utils.Order( true, 
-      Math.floor(Math.random() * orderSize*2),
-      Math.floor(Math.random() * fairPrice*2),
+      Math.floor(random() * orderSize*2)*fairPrice *precision,
+      Math.floor(random() * fairPrice*3),
       10000,
       accounts[step]
       ));
@@ -67,10 +78,18 @@ function generateBuyOrders(accounts) {
 
 function generateSellOrders(accounts) {
   let sellOrders =[];
+  // for (let step = numOrders; step < 2*numOrders; step++) {
+  //   sellOrders.push( new  Utils.Order( false, 
+  //     Math.floor(Math.random() * orderSize*2),
+  //     Math.floor(Math.random() * fairPrice*2),
+  //     10000,
+  //     accounts[step]
+  //     ));
+  // }
   for (let step = numOrders; step < 2*numOrders; step++) {
     sellOrders.push( new  Utils.Order( false, 
-      Math.floor(Math.random() * orderSize*2),
-      Math.floor(Math.random() * fairPrice*2),
+      Math.floor(random() * orderSize*2)*precision,
+      Math.floor(random() * fairPrice),
       10000,
       accounts[step]
       ));
@@ -108,12 +127,21 @@ function generateClientCommitInfo(orders, deposits) {
 
 function generateMarkets(accounts) {
   let markets=[];
+  // for (let step = 2*numOrders; step <(2*numOrders)+ numMarkets; step++) {
+  //   let mids=fairPrice + ( Math.floor(Math.random() * marketWidths*2)-marketWidths);
+  //   let _market = new Utils.MarketMakerOrder(mids-Math.floor(marketWidths/2),
+  //       Math.floor(Math.random() * orderSize)*fairPrice,
+  //       mids+Math.floor(marketWidths/2),
+  //       Math.floor(Math.random() * orderSize),
+  //       accounts[step]);
+  //   markets.push(_market);
+  // }
   for (let step = 2*numOrders; step <(2*numOrders)+ numMarkets; step++) {
-    let mids=fairPrice + ( Math.floor(Math.random() * marketWidths*2)-marketWidths);
+    let mids=fairPrice + ( Math.floor(random() * marketWidths*2)-marketWidths);
     let _market = new Utils.MarketMakerOrder(mids-Math.floor(marketWidths/2),
-        Math.floor(Math.random() * orderSize*orderSize)*fairPrice,
+        Math.floor(random() * orderSize)*fairPrice*precision,
         mids+Math.floor(marketWidths/2),
-        Math.floor(Math.random() * orderSize*orderSize),
+        Math.floor(random() * orderSize)*precision,
         accounts[step]);
     markets.push(_market);
   }
@@ -213,16 +241,16 @@ contract("ClientAndMM", async function (accounts) {
 
   it('mint and approve tokens', async function () {
     for (let step = 0; step < numOrders; step++) {
-      await tknA.mint(accounts[step], orderSize*orderSize);
-      await tknB.mint(accounts[numOrders+step], orderSize*orderSize);
-      await tknA.approve(inst.address, orderSize*orderSize, {from: accounts[step]});
-      await tknB.approve(inst.address, orderSize*orderSize, {from: accounts[numOrders+step]});
+      await tknA.mint(accounts[step], orderSize*orderSize*precision);
+      await tknB.mint(accounts[numOrders+step], orderSize*orderSize*precision);
+      await tknA.approve(inst.address, orderSize*orderSize*precision, {from: accounts[step]});
+      await tknB.approve(inst.address, orderSize*orderSize*precision, {from: accounts[numOrders+step]});
     }
     for (let step = 0; step < numMarkets; step++) {
-      await tknA.mint(accounts[(2*numOrders)+step], orderSize*orderSize*fairPrice);
-      await tknB.mint(accounts[(2*numOrders)+step], orderSize*orderSize*fairPrice);
-      await tknA.approve(inst.address, orderSize*orderSize*fairPrice, {from: accounts[(2*numOrders)+step]});
-      await tknB.approve(inst.address, orderSize*orderSize*fairPrice, {from: accounts[(2*numOrders)+step]});
+      await tknA.mint(accounts[(2*numOrders)+step], orderSize*orderSize*fairPrice*precision);
+      await tknB.mint(accounts[(2*numOrders)+step], orderSize*orderSize*fairPrice*precision);
+      await tknA.approve(inst.address, orderSize*orderSize*fairPrice*precision, {from: accounts[(2*numOrders)+step]});
+      await tknB.approve(inst.address, orderSize*orderSize*fairPrice*precision, {from: accounts[(2*numOrders)+step]});
     }
   });
   it("should register properly", async function () {
@@ -293,7 +321,9 @@ contract("ClientAndMM", async function (accounts) {
     // console.log('contract balance B: ',await tknB.balanceOf(inst.address));
     let clearingInfo= getClearingPrice(blockchainBuyOrders,blockchainSellOrders, minTickSize);
     console.log('clearing price:',clearingInfo.clearingPrice, ', volume settled in token A:', clearingInfo.volumeSettled, ', imbalance:', clearingInfo.imbalance);
-    reg = await inst.Settlement(clearingInfo.clearingPrice, clearingInfo.volumeSettled, clearingInfo.imbalance ,   {from: bishop, gasLimit: 10000000});
+    reg = await inst.Settlement(clearingInfo.clearingPrice, clearingInfo.volumeSettled, clearingInfo.imbalance ,   {from: accounts[0], gasLimit: 10000000});
+    expectEvent(reg, "HeresTrouble", {checkNumber:-1, returnToSender: 1, remainder: 1 });
+
     // console.log('post exchange pawn balance A: ',await tknA.balanceOf(pawn));
     // console.log('post exchange pawn balance B: ',await tknB.balanceOf(pawn));
     // console.log('post exchange bishop balance A: ',await tknA.balanceOf(bishop));
@@ -402,10 +432,10 @@ function getClearingPrice(buyOrders, sellOrders, minTickSize ) {
     }
     let _lowerbound = _prices[_prices.indexOf(_clearingPrice)-1];
     let _newImbalance = _buyVolumeFinal - (_sellVolumeFinal*(_clearingPrice-minTickSize));
-    while(_maxVolume == Math.min(_buyVolumeFinal, _sellVolumeFinal*(_clearingPrice+minTickSize)) && Math.abs(_newImbalance)<Math.abs(_imbalance) && _clearingPrice-minTickSize>_lowerbound){
-      _clearingPrice+=minTickSize;
+    while(_maxVolume == Math.min(_buyVolumeFinal, _sellVolumeFinal*(_clearingPrice-minTickSize)) && Math.abs(_newImbalance)<Math.abs(_imbalance) && _clearingPrice-minTickSize>_lowerbound){
+      _clearingPrice-=minTickSize;
       _imbalance=_newImbalance;
-      _newImbalance=_buyVolumeFinal- (_sellVolumeFinal*(_clearingPrice+minTickSize));
+      _newImbalance=_buyVolumeFinal- (_sellVolumeFinal*(_clearingPrice-minTickSize));
     }
       
 
