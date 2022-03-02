@@ -556,7 +556,11 @@ contract ClientAndMM{
                     uint256 transferQty = DivideBy(_revealedBuyOrders[i]._size * (buyVolume- sellVolume) , sizeProRate);
 
                     _processOrderSettlement(_tokenA, Math.min(transferQty,_aBalance), _revealedBuyOrders[i]._owner);
-                    _aBalance= Math.max(_aBalance-transferQty,0);
+                    if(_aBalance>transferQty){
+                        _aBalance -=transferQty;
+                    } else {
+                        _aBalance=0;
+                    }
                     _revealedBuyOrders[i]._size -= transferQty;
                 } 
             }
@@ -596,7 +600,13 @@ contract ClientAndMM{
 
                     // TODO: Handle return codes.
                     _processOrderSettlement(_tokenB, transferQty, _revealedSellOrders[i]._owner);
-                    _bBalance= Math.max(_bBalance-transferQty,0);
+                    
+                    if(_bBalance>transferQty){
+                        _bBalance -=transferQty;
+                    } else {
+                        _bBalance=0;
+                    }
+
                     emit ContractBalanceCheck(ticker++, _tokenA.balanceOf(address(this)), _tokenB.balanceOf(address(this)));
                     
                 } 
@@ -644,9 +654,10 @@ contract ClientAndMM{
                 }
             } else if (_revealedSellOrders[i]._price > clearingPrice) {
                 //return tokens to players not trading
+
+
                 _processOrderSettlement(_tokenB, Math.min(_revealedSellOrders[i]._size,_bBalance), _revealedSellOrders[i]._owner);
                 emit ContractBalanceCheck(ticker++, _tokenA.balanceOf(address(this)), _tokenB.balanceOf(address(this)));
-                _bBalance= Math.max(_bBalance-_revealedSellOrders[i]._size,0);
                 if(_bBalance>_revealedSellOrders[i]._size){
                     _bBalance -=_revealedSellOrders[i]._size;
                 } else {

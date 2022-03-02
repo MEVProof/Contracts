@@ -16,7 +16,7 @@ chai.use(chaiBn(BN));
 
 const expect = chai.expect;
 
-var seed = 1;
+var seed = 25;
 function random() {
     var x = Math.sin(seed++) * 10000;
     return x - Math.floor(x);
@@ -163,7 +163,9 @@ contract("ClientAndMM", async function (accounts) {
   let numBlockchainSells;
   let blockchainBuyOrders=[];
   let blockchainSellOrders=[];
-
+  let clearingInfo;
+  const mintSizeA=orderSize*orderSize*fairPrice*precision;
+  const mintSizeB=orderSize*orderSize*precision;
 
   const buyOrders = generateBuyOrders(accounts);
   const sellOrders = generateSellOrders(accounts);
@@ -173,84 +175,24 @@ contract("ClientAndMM", async function (accounts) {
   const sellCommitInputs = generateClientCommitInfo(sellOrders, sellOrderDeposits);
   const markets = generateMarkets(accounts);
 
-
-
-  // console.log(buyOrders);
-  // console.log(sellOrders);
-  // console.log(markets);
-
-
-  // let pawn = accounts[0];
-  // let relayer = accounts[1];
-  // let bishop = accounts[2];
-  // let knight = accounts[3];
-  // const deposit = Utils.GenerateDeposit();
-  // const newDeposit = Utils.GenerateDeposit();
-  // const order = new Utils.Order(true, 500, 100, 10000, pawn);
-  // let proof= rbigint(31).toString();
-  // let root= rbigint(31).toString();
-  // const clientCommitInput = {
-  //   _orderHash: order.GetSolidityHash(),
-  //   _proof: web3.eth.abi.encodeParameter('uint256', proof),
-  //   _root: web3.eth.abi.encodeParameter('uint256', root),
-  //   _nullifierHash: deposit.nullifierHash,
-  // };
-  // const market = new Utils.MarketMakerOrder(99, 10000, 100, 10, bishop);
-
   it("should be deployed", async function () {
     inst = await CnM.deployed();
     tknA = await TokenA.deployed(); 
     tknB = await TokenB.deployed();
   });
 
-  // it('mint and approve tokens', async function () {
-  //   await tknA.mint(pawn, 1000);
-  //   await tknB.mint(knight, 1000);
-  //   await tknA.mint(bishop, 100000);
-  //   await tknB.mint(bishop, 100000);
-  //   await tknA.approve(inst.address, 1000, {from: pawn});
-  //   await tknB.approve(inst.address, 1000, {from: relayer});
-  //   await tknA.approve(inst.address, 100000, {from: bishop});
-  //   await tknB.approve(inst.address, 100000, {from: bishop});
-
-  // });
-
-  // it("should register properly", async function () {  
-  //   reg = await inst.Client_Register(deposit.commitment,{from: pawn, value: clientDepositAmount});  
-  // });
-  // // it("should not register properly", async function () {
-  // //   reg = await expectRevert(inst.Client_Register(web3.utils.asciiToHex('0'),{from: pawn, value: oneEth}), 'Client register must deposit escrow + relayer fee');
-  // // });
-  // it("should add client commitment:", async function () {
-  //   reg = await inst.Client_Commit(order.GetSolidityHash(), clientCommitInput._proof, clientCommitInput._root, clientCommitInput._nullifierHash,  {from: relayer});
-  // });
-  // it("should add MM commitment:", async function () {
-  //   reg = await inst.MM_Commit(market.GetSolidityHash(),  {from: bishop, value: tenEth});
-  // });
-  // it("should move to Reveal phase", async function () {
-  //   reg= await inst.Move_To_Reveal_Phase();
-  // });
-  // it("should reveal client order", async function () {
-  //   reg = await inst.Client_Reveal(order.GetSolidityHash(), order.Unwrap(), deposit.nullifier, deposit.randomness, deposit.commitment, newDeposit.commitment, {from: pawn, value: oneEth});
-  // });
-  // it("should reveal MM market", async function () {  
-  //   reg = await inst.MM_Reveal(market.GetSolidityHash(), market,   {from: bishop});
-  // });
-
-
-
   it('mint and approve tokens', async function () {
     for (let step = 0; step < numOrders; step++) {
-      await tknA.mint(accounts[step], orderSize*orderSize*precision);
-      await tknB.mint(accounts[numOrders+step], orderSize*orderSize*precision);
-      await tknA.approve(inst.address, orderSize*orderSize*precision, {from: accounts[step]});
-      await tknB.approve(inst.address, orderSize*orderSize*precision, {from: accounts[numOrders+step]});
+      await tknA.mint(accounts[step], mintSizeA);
+      await tknB.mint(accounts[numOrders+step], mintSizeB);
+      await tknA.approve(inst.address, mintSizeA, {from: accounts[step]});
+      await tknB.approve(inst.address, mintSizeB, {from: accounts[numOrders+step]});
     }
     for (let step = 0; step < numMarkets; step++) {
       await tknA.mint(accounts[(2*numOrders)+step], orderSize*orderSize*fairPrice*precision);
-      await tknB.mint(accounts[(2*numOrders)+step], orderSize*orderSize*fairPrice*precision);
-      await tknA.approve(inst.address, orderSize*orderSize*fairPrice*precision, {from: accounts[(2*numOrders)+step]});
-      await tknB.approve(inst.address, orderSize*orderSize*fairPrice*precision, {from: accounts[(2*numOrders)+step]});
+      await tknB.mint(accounts[(2*numOrders)+step], orderSize*orderSize*precision);
+      await tknA.approve(inst.address, mintSizeA, {from: accounts[(2*numOrders)+step]});
+      await tknB.approve(inst.address, mintSizeB, {from: accounts[(2*numOrders)+step]});
     }
   });
   it("should register properly", async function () {
@@ -316,20 +258,47 @@ contract("ClientAndMM", async function (accounts) {
     console.log('blockchain sell orders:', blockchainSellOrders);
   });
   it("should settle orders", async function () {
-    
-    // console.log('contract balance A: ',await tknA.balanceOf(inst.address));
-    // console.log('contract balance B: ',await tknB.balanceOf(inst.address));
-    let clearingInfo= getClearingPrice(blockchainBuyOrders,blockchainSellOrders, minTickSize);
+
+    clearingInfo= getClearingPrice(blockchainBuyOrders,blockchainSellOrders, minTickSize);
     console.log('clearing price:',clearingInfo.clearingPrice, ', volume settled in token A:', clearingInfo.volumeSettled, ', imbalance:', clearingInfo.imbalance);
     reg = await inst.Settlement(clearingInfo.clearingPrice, clearingInfo.volumeSettled, clearingInfo.imbalance ,   {from: accounts[0], gasLimit: 10000000});
-    expectEvent(reg, "HeresTrouble", {checkNumber:-1, returnToSender: 1, remainder: 1 });
+  });
 
-    // console.log('post exchange pawn balance A: ',await tknA.balanceOf(pawn));
-    // console.log('post exchange pawn balance B: ',await tknB.balanceOf(pawn));
-    // console.log('post exchange bishop balance A: ',await tknA.balanceOf(bishop));
-    // console.log('post exchange bishop balance B: ',await tknB.balanceOf(bishop));
-    // console.log('contract balance A: ',await tknA.balanceOf(inst.address));
-    // console.log('contract balance B: ',await tknB.balanceOf(inst.address));
+  it("check client order settlement", async function () {
+    let theoreticABalance;
+    let theoreticBBalance;
+    let actualABalance;
+    let actualBBalance;
+    let _CP=clearingInfo.clearingPrice;
+    for (let step = 0; step < numOrders; step++) {
+      actualABalance= await tknA.balanceOf(accounts[step]);
+      actualBBalance= await tknB.balanceOf(accounts[step]);
+      //not checking properly for imbalance yet
+      if (_CP<=blockchainBuyOrders[step]._price){
+        theoreticABalance= mintSizeA-blockchainBuyOrders[step]._size;
+        theoreticBBalance= (blockchainBuyOrders[step]._size/_CP);
+      } else{
+        theoreticABalance=mintSizeA;
+        theoreticBBalance=0;
+      }
+
+      console.log('Account ', step ,'. expected A balance:', theoreticABalance, ', actual A balance:', Number(actualABalance.toString()),  ', expected B balance:', theoreticBBalance,', actual B balance:', Number(actualBBalance.toString()));
+    }
+    for (let step = 0; step < numOrders; step++) {
+      actualABalance= await tknA.balanceOf(accounts[numOrders+step]);
+      actualBBalance= await tknB.balanceOf(accounts[numOrders+step]);
+      //not checking properly for imbalance yet
+      if (_CP>=blockchainSellOrders[step]._price){
+        theoreticABalance= blockchainSellOrders[step]._size*_CP;
+        theoreticBBalance= mintSizeB-blockchainSellOrders[step]._size;
+      } else{
+        theoreticABalance=0;
+        theoreticBBalance=mintSizeB;
+      }
+
+      console.log('Account ', numOrders+step ,'. expected A balance:', theoreticABalance, ', actual A balance:', Number(actualABalance.toString()),  ', expected B balance:', theoreticBBalance,', actual B balance:', Number(actualBBalance.toString()));
+
+    }
 
   });
 
