@@ -48,8 +48,10 @@ contract ClientAndMM{
 
     //Exchange variables from Padraic's code
     uint256 _wTight=type(uint256).max;
-    uint256 constant _minTickSize =1;
-    uint256 constant _clearingPricePrecision = 1000;
+    
+    uint256 constant _decimalPrecisionPoints=5;
+    uint256 constant _clearingPricePrecision = 10**_decimalPrecisionPoints;
+    uint256 _minTickSize=10**(_decimalPrecisionPoints-2);
     uint256 _currentAuctionNotional=0;
     uint256 constant _anyWidthValue = type(uint256).max;
     uint256 constant _marketOrderValue = type(uint256).max;
@@ -272,7 +274,7 @@ contract ClientAndMM{
         _bid._price=_market._bidPrice;
 
         // set to max Value
-        _bid._maxTradeableWidth= 100;
+        _bid._maxTradeableWidth= 100000*_clearingPricePrecision;
 
         _bid._owner=msg.sender;
 
@@ -287,7 +289,7 @@ contract ClientAndMM{
         _offer._price=_market._offerPrice;
 
         // set to max Value
-        _offer._maxTradeableWidth= 100;
+        _offer._maxTradeableWidth= 100000*_clearingPricePrecision;
 
         _offer._owner=msg.sender;
 
@@ -356,11 +358,15 @@ contract ClientAndMM{
     }
     
     function MulByClearingPrice(uint256 value, uint256 clearingPrice) pure internal returns (uint256) {
-        return SafeMath.div(SafeMath.mul(SafeMath.mul(value, _clearingPricePrecision), clearingPrice), _clearingPricePrecision);
+        return SafeMath.div(SafeMath.mul(value, clearingPrice), _clearingPricePrecision);
     }
 
-    function DivideBy(uint256 value, uint256 clearingPrice) pure internal returns (uint256) {
-        return SafeMath.div(SafeMath.div(SafeMath.mul(value, _clearingPricePrecision), clearingPrice), _clearingPricePrecision);
+    function DivideByClearingPrice(uint256 value, uint256 clearingPrice) pure internal returns (uint256) {
+        return SafeMath.div(SafeMath.mul(value, _clearingPricePrecision), clearingPrice);
+    }
+
+    function DivideBy(uint256 numerator, uint256 denominator) pure internal returns (uint256) {
+        return SafeMath.div(numerator, denominator);
     }
 
     event CheckerEvent1(uint256 clearingPrice, uint256 buyVolume, uint256 sellVolume);
@@ -445,8 +451,8 @@ contract ClientAndMM{
         emit CheckerEvent1(clearingPrice, buyVolume, sellVolume);
         
 
-        require(Math.min(buyVolume, sellVolume* clearingPrice) == volumeSettled, "req 2");        
-        require((int256(buyVolume) - int256(sellVolume * clearingPrice)) == imbalance, "req 3"); // TODO: Fix data types, safe cast
+        require(Math.min(buyVolume, MulByClearingPrice(sellVolume, clearingPrice)) == volumeSettled, "req 2");        
+        require((int256(buyVolume) - int256(MulByClearingPrice(sellVolume, clearingPrice))) == imbalance, "req 3"); // TODO: Fix data types, safe cast
 
         if (imbalance == 0) {
             SettleOrders(clearingPrice, buyVolume, sellVolume);
@@ -471,7 +477,7 @@ contract ClientAndMM{
                 }
             }
 
-            buyVolumeNew *= priceToCheck;
+            sellVolumeNew = MulByClearingPrice(sellVolumeNew,priceToCheck);
 
             // If the next price clears less volume, or clears the same volume with a larger imbalance, the proposed CP is valid
             require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
@@ -499,7 +505,7 @@ contract ClientAndMM{
                 }
             }
 
-            sellVolumeNew *= priceToCheck; // TODO: What is this?
+            sellVolumeNew = MulByClearingPrice(sellVolumeNew, priceToCheck); // TODO: What is this?
 
             require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
                 (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && Abs(imbalance) <= Abs((int256)(buyVolumeNew) - (int256)(sellVolumeNew)))); // TODO: Fix data types
@@ -524,7 +530,7 @@ contract ClientAndMM{
         uint256 problemNumber;
 
         
-        sellVolume = sellVolume * clearingPrice; 
+        sellVolume = MulByClearingPrice(sellVolume, clearingPrice); 
 
         uint256 _aBalance = _tokenA.balanceOf(address(this));
         uint256 _bBalance = _tokenB.balanceOf(address(this));
@@ -590,7 +596,7 @@ contract ClientAndMM{
                     // Return tokens not going to be exchanged
 
                     
-                    uint256 transferQty = DivideBy(_revealedSellOrders[i]._size * (sellVolume- buyVolume) , sizeProRate*clearingPrice);
+                    uint256 transferQty = DivideBy(_revealedSellOrders[i]._size * (sellVolume- buyVolume) , MulByClearingPrice(sizeProRate,clearingPrice));
                     
 
         
@@ -617,7 +623,7 @@ contract ClientAndMM{
             
             // Execute buy order if bid greater than clearing price
             if (_revealedBuyOrders[i]._price >= clearingPrice || _revealedBuyOrders[i]._price == _marketOrderValue) {
-                uint256 tokenTradeSize = DivideBy(_revealedBuyOrders[i]._size, clearingPrice); // order.size / clearingPrice;
+                uint256 tokenTradeSize = DivideByClearingPrice(_revealedBuyOrders[i]._size, clearingPrice); // order.size / clearingPrice;
 
                 //emit HeresTrouble(ticker++, tokenTradeSize, _revealedBuyOrders[i]._size);
                 _processOrderSettlement(_tokenB, Math.min(tokenTradeSize,_bBalance), _revealedBuyOrders[i]._owner);
@@ -643,7 +649,7 @@ contract ClientAndMM{
         for (uint i = 0; i < revealedSellOrderCount; i++) {
             // Execute sell order if ask less than clearing price
             if (_revealedSellOrders[i]._price <= clearingPrice || _revealedSellOrders[i]._price == _marketOrderValue) {
-                uint256 tokenTradeSize = _revealedSellOrders[i]._size* clearingPrice; // order.size / clearingPrice
+                uint256 tokenTradeSize = MulByClearingPrice(_revealedSellOrders[i]._size, clearingPrice); // order.size / clearingPrice
 
                 _processOrderSettlement(_tokenA, Math.min(tokenTradeSize,_aBalance), _revealedSellOrders[i]._owner);
                 emit ContractBalanceCheck(ticker++, _tokenA.balanceOf(address(this)), _tokenB.balanceOf(address(this)));
