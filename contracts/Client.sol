@@ -64,24 +64,23 @@ contract ClientAndMM{
     uint256 _escrowMM;
     uint256 _relayerFee;
     uint256 _tokenAFairValue;
+    uint256 _settlementBounty;
 
 
     Phase _phase;
 
-
-    //Exchange variables from Padraic's code
-    uint256 _wTight=type(uint256).max;
+    uint _phaseLength;
+    uint _lastPhaseUpdate;
+    uint256 _wTight;
+    uint256 _currentAuctionNotional;
     
-    uint256 constant _decimalPrecisionPoints=10;
+    uint256 constant _decimalPrecisionPoints  = 10;
     uint256 constant _clearingPricePrecision = 10**_decimalPrecisionPoints;
-
     // here I have programmed the tick size precision to be less than the price/ volume precision to give some room for error. 
-    uint256 _minTickSizePrecision=_decimalPrecisionPoints-2;
-    
-    uint256 _minTickSize=10**_minTickSizePrecision;
-    uint256 _currentAuctionNotional=0;
-    uint256 constant _anyWidthValue = type(uint256).max;
-    uint256 constant _marketOrderValue = type(uint256).max;
+    uint256 constant _minTickSizePrecision = _decimalPrecisionPoints-2;
+    uint256 constant _minTickSize = 10**_minTickSizePrecision;
+    uint256 _anyWidthValue = type(uint256).max;
+    uint256 _marketOrderValue = type(uint256).max;
 
     enum Phase {
         Commit, Reveal, Resolution
@@ -124,11 +123,26 @@ contract ClientAndMM{
         // set MM escrow
         _escrowMM = 10;
 
-        // set tokenA fair value
+        // reward to be paid to player successfully settling orders. 
+        _settlementBounty=1;
+
+        // set tokenA fair value. Needed to compare escrows and order/market deposit amounts
         _tokenAFairValue = 1;
 
         // initialise phase as Commit
         _phase = Phase.Commit;
+
+        // used to track and update the phase
+        _phaseLength=100;
+        _lastPhaseUpdate=0;
+
+        _currentAuctionNotional = 0;
+        _wTight = type(uint256).max;
+
+
+        
+
+
     }
 
     // housekeeping functions needed to transition between phases. In reality we want these 
@@ -148,6 +162,24 @@ contract ClientAndMM{
         ) external returns (bool) {
         _phase = Phase.Resolution;
         return true;
+    }
+
+
+    // I think this function at the start of every main contract function
+    // Specifically Client_Commit, MM_Commit, Client_Reveal, MM_Reveal and Settlement
+    // Should effectively automated transitioning between phases
+
+    function phase_Manager() internal {
+        if (block.number-_lastPhaseUpdate>=_phaseLength){
+            _lastPhaseUpdate=block.number;
+            if (_phase == Phase.Commit){
+                _phase = Phase.Reveal;
+            } else if (_phase == Phase.Reveal){
+                _phase = Phase.Resolution;
+            } else {
+                _phase = Phase.Commit;
+            }
+        }
     }
 
     // should be nonReentrant 
@@ -206,7 +238,6 @@ contract ClientAndMM{
         _committedMarkets[_marketHash] = true; 
     }
  
-    
     function Client_Reveal( 
         bytes32 _orderHash,
         Order memory _order,
@@ -254,7 +285,6 @@ contract ClientAndMM{
         }
         return true;
     }
-
 
     function MM_Reveal( 
         bytes32 _marketHash,
@@ -321,8 +351,12 @@ contract ClientAndMM{
     }
 
 
-    function Settlement(uint256 clearingPrice, uint256 volumeSettled, int256 imbalance) public returns (bool) {
+    function Settlement(uint256 clearingPrice, uint256 volumeSettled, int256 imbalance) external payable returns (bool) {
+
+        require(msg.value >= (_settlementBounty), "Client register must deposit escrow + relayer fee");
         // Deposit bounty
+
+
         require(_revealedSellOrders.length + _revealedBuyOrders.length > 0, "No orders");
 
         uint256 revealedBuyOrderCount = _revealedBuyOrders.length;
@@ -420,9 +454,18 @@ contract ClientAndMM{
 
             SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
-        return true;
+        
 
-        // Return deposit + reward to caller
+        // Return deposit + reward to caller. Currently just returning deposit as contract does not have a balance necessarily
+
+        _processSettlementPayout();
+
+        // Reaching this part of the contract means order have been settled, so the portoocol can transition to the next Commit phase
+
+        _lastPhaseUpdate=block.number;
+        _phase= Phase.Commit;
+
+        return true;
     }
 
 
@@ -599,6 +642,11 @@ contract ClientAndMM{
         payable(msg.sender).transfer(_escrowClient);
     }
 
+    // This should be more than _settlementBounty to incentivise settlement
+
+    function _processSettlementPayout() internal {
+        payable(msg.sender).transfer(_settlementBounty);
+    }
     
     // proceeding functions are necessary to perform 'precise' multiplication and division
 

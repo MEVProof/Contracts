@@ -264,7 +264,7 @@ contract("ClientAndMM", async function (accounts) {
 
 
   it("should settle orders", async function () {
-    reg = await inst.Settlement(clearingInfo.clearingPrice, clearingInfo.volumeSettled, clearingInfo.imbalance,   {from: accounts[0], gasLimit: 10000000});
+    reg = await inst.Settlement(clearingInfo.clearingPrice, clearingInfo.volumeSettled, clearingInfo.imbalance,   {from: accounts[0], gasLimit: 10000000, value: oneEth});
   });
 
   // a checker function to ensure settlement is done as expected.
