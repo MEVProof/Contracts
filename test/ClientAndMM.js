@@ -17,8 +17,10 @@ chai.use(chaiBn(BN));
 const expect = chai.expect;
 
 
-// this generates predicatable randomness so we can repeat tests if/ when they fail
-var seed = 25;
+// setting seed equal to a constant generates predicatable randomness 
+//so we can repeat tests if/ when they fail
+var seed = Math.random();
+
 function random() {
     var x = Math.sin(seed++) * 10000;
     return x - Math.floor(x);
@@ -30,13 +32,16 @@ const TokenB = artifacts.require("TokenB");
 
 
 // these variables are used only to generate orders, and not "accessible" by the contracts/ CP calculator
-// precision 
+// decimalPoints specifies the price precision, and 
+//the precision to which orders are being settled correctly
 
-const decimalPoints=5;
+const decimalPoints=10;
 const precision = BigInt(Math.pow(10,decimalPoints));
 const localFairPrice = BigInt(100);
 const fairPrice = localFairPrice*precision;
 
+
+// 2*numOrders +numMarkets must be at most 10 as there are only 10 accounts in truffle
 const numOrders = 4;
 const numMarkets = 2;
 const marketWidths = BigInt(Math.floor(0.05*Number(fairPrice)));
@@ -47,35 +52,13 @@ const snarkjs = require('snarkjs')
 const circomlib = require('circomlib');
 const Utils = require('./Utils');
 
-const pedersenHash = (data) => circomlib.babyJub.unpackPoint(circomlib.pedersenHash.hash(data))[0]
 const rbigint = (nbytes) => snarkjs.bigInt.leBuff2int(crypto.randomBytes(nbytes))
-const toFixedHex = (number, length = 32) =>
-  '0x' +
-  bigInt(number)
-    .toString(16)
-    .padStart(length * 2, '0')
-const getRandomRecipient = () => rbigint(20)
 
-function generateDeposit() {
-  let deposit = {
-    nullifier: rbigint(31).toString(),
-    randomness: rbigint(31).toString(),
-    newcommitment: rbigint(31).toString()
-    
-  }
-  deposit.commitment = web3.utils.soliditySha3(web3.eth.abi.encodeParameters(['uint256','uint256'], [deposit.nullifier, deposit.randomness] ));
-  return deposit;
-}
 
+// all numbers are converted to BigInt so they can be passed to Solidity
 function generateBuyOrders(accounts) {
   let buyOrders =[];
   for (let step = 0; step < numOrders; step++) {
-    // buyOrders.push(new  Utils.Order( true, 
-    //   Math.floor(Math.random() * orderSize*2),
-    //   Math.floor(Math.random() * fairPrice*2),
-    //   10000,
-    //   accounts[step]
-    //   ));
     buyOrders.push(new  Utils.Order( true, 
       BigInt(Math.floor(random() * Number(orderSize)))*localFairPrice *precision,
       BigInt(Math.floor(random() * Number(localFairPrice)*3))*precision,
@@ -88,14 +71,6 @@ function generateBuyOrders(accounts) {
 
 function generateSellOrders(accounts) {
   let sellOrders =[];
-  // for (let step = numOrders; step < 2*numOrders; step++) {
-  //   sellOrders.push( new  Utils.Order( false, 
-  //     Math.floor(Math.random() * orderSize*2),
-  //     Math.floor(Math.random() * fairPrice*2),
-  //     10000,
-  //     accounts[step]
-  //     ));
-  // }
   for (let step = numOrders; step < 2*numOrders; step++) {
     sellOrders.push( new  Utils.Order( false, 
       BigInt(Math.floor(random() * Number(orderSize))) *precision,
@@ -110,6 +85,9 @@ function generateSellOrders(accounts) {
 function generateDeposits() {
   let deposits=[];
   for (let step = 0; step < numOrders; step++) {
+    //this deposit also generates a new commitment for client re-entry into the system 
+    // (without secret keys though)
+  
     let deposit = {
       nullifier: rbigint(31).toString(),
       randomness: rbigint(31).toString(),
@@ -137,15 +115,6 @@ function generateClientCommitInfo(orders, deposits) {
 
 function generateMarkets(accounts) {
   let markets=[];
-  // for (let step = 2*numOrders; step <(2*numOrders)+ numMarkets; step++) {
-  //   let mids=fairPrice + ( Math.floor(Math.random() * marketWidths*2)-marketWidths);
-  //   let _market = new Utils.MarketMakerOrder(mids-Math.floor(marketWidths/2),
-  //       Math.floor(Math.random() * orderSize)*fairPrice,
-  //       mids+Math.floor(marketWidths/2),
-  //       Math.floor(Math.random() * orderSize),
-  //       accounts[step]);
-  //   markets.push(_market);
-  // }
   for (let step = 2*numOrders; step <(2*numOrders)+ numMarkets; step++) {
     let mids=fairPrice +  BigInt(Math.floor(random() * Number(marketWidths)*2))-marketWidths;
     let _market = new Utils.MarketMakerOrder(mids-BigInt(Math.floor(Number(marketWidths)/2)),
@@ -175,6 +144,8 @@ contract("ClientAndMM", async function (accounts) {
   let blockchainSellOrders=[];
   let clearingInfo;
   let blockchainDecimalPoints;
+
+  //specifies amount of each token to mint/apporve for each player
   const mintSizeA=BigInt(orderSize*orderSize*localFairPrice*precision);
   const mintSizeB=BigInt(orderSize*orderSize*precision);
 
@@ -237,6 +208,9 @@ contract("ClientAndMM", async function (accounts) {
       await inst.MM_Reveal(markets[step].GetSolidityHash(), markets[step], {from: accounts[(2*numOrders)+step]});    
     }
   });
+
+  //downloads order information from blockchain, and calculates clearing price locally
+  //by calling getClearingPrice()
   it("get Clearing Price Info", async function () {  
     minTickSize = Number(await inst._getMinTickSize())/Number(precision);
     numBlockchainBuys = await inst._getNumBuyOrders();
@@ -250,7 +224,7 @@ contract("ClientAndMM", async function (accounts) {
         let s= await inst._getBuyOrderSize(step);
         blockchainBuyOrders.push({
           _price: Number(p.toString())/Number(precision),
-          _size: Number(s.toString())
+          _size: Number(s.toString())/Number(precision)
         });
       }
     }
@@ -261,33 +235,50 @@ contract("ClientAndMM", async function (accounts) {
         let s= await inst._getSellOrderSize(step);
         blockchainSellOrders.push({
           _price: Number(p.toString())/Number(precision),
-          _size: Number(s.toString())
+          _size: Number(s.toString())/Number(precision)
         });
       }
     }
     console.log('blockchain buy orders:', blockchainBuyOrders);
-    console.log('local buy orders:', buyOrders);
     console.log('blockchain sell orders:', blockchainSellOrders);
-    console.log('local sell orders:', sellOrders);
+    for (let step = 0; step < blockchainBuyOrders.length ; step++) {
+      blockchainBuyOrders[step]._size= blockchainBuyOrders[step]._size*Number(precision)
+    }
+    for (let step = 0; step < blockchainSellOrders.length ; step++) {
+      blockchainSellOrders[step]._size= blockchainSellOrders[step]._size*Number(precision)
+    }
   });
-  it("should settle orders", async function () {
 
+  // due to rounding errors, buyVol, sellVol, CP and imbalance are improbable to match on chain
+  // this function uses the correctly computed clearing price to back out these values
+  // as Solidity does. It is currently an on-chain computation, but running Solidity locally
+  // would suffice. 
+  it("convert clearing price info to satisfy on-chain requirements", async function () {  
     clearingInfo= getClearingPrice(blockchainBuyOrders,blockchainSellOrders, minTickSize);
-    console.log('clearing price:',clearingInfo.clearingPrice, ', volume settled in token A:', clearingInfo.volumeSettled, ', imbalance:', clearingInfo.imbalance);
-    reg = await inst.Settlement(BigInt(Math.round(Number(clearingInfo.clearingPrice)*Number(precision))), BigInt(Math.floor(Number(clearingInfo.volumeSettled))), BigInt(Math.floor(Number(clearingInfo.imbalance))) ,   {from: accounts[0], gasLimit: 10000000});
+    clearingInfo.clearingPrice=BigInt(Math.round(Number(clearingInfo.clearingPrice)*Number(precision)));
+    await inst.clearingPriceConvertor(clearingInfo.clearingPrice, BigInt(Math.floor(Number(clearingInfo.volumeSettled))), BigInt(Math.floor(Number(clearingInfo.imbalance))) ,   {from: accounts[0], gasLimit: 10000000})
+    clearingInfo.volumeSettled= BigInt(Number(await inst._getSolVolumeSettled()));
+    clearingInfo.imbalance= BigInt(Number(await inst._getSolImbalance()));
+    console.log('clearing price:',Number(clearingInfo.clearingPrice)/Number(precision), ', volume settled in token A:', Number(clearingInfo.volumeSettled)/Number(precision), ', imbalance:', Number(clearingInfo.imbalance)/Number(precision));
   });
 
+
+  it("should settle orders", async function () {
+    reg = await inst.Settlement(clearingInfo.clearingPrice, clearingInfo.volumeSettled, clearingInfo.imbalance,   {from: accounts[0], gasLimit: 10000000});
+  });
+
+  // a checker function to ensure settlement is done as expected.
   it("check client order settlement", async function () {
     let theoreticABalance;
     let theoreticBBalance;
     let actualABalance;
     let actualBBalance;
-    let _CP=Number(clearingInfo.clearingPrice);
+    let _CP=Number(clearingInfo.clearingPrice)/Number(precision);
     for (let step = 0; step < numOrders; step++) {
       actualABalance= Number(await tknA.balanceOf(accounts[step]))/Number(precision);
       actualBBalance= Number(await tknB.balanceOf(accounts[step]))/Number(precision);
       //not checking properly for imbalance yet
-      if (_CP<=blockchainBuyOrders[step]._price){
+      if (_CP<blockchainBuyOrders[step]._price){
         theoreticABalance= (Number(mintSizeA)-blockchainBuyOrders[step]._size)/Number(precision);
         theoreticBBalance= (Number(blockchainBuyOrders[step]._size)/_CP)/Number(precision);
       } else{
@@ -314,6 +305,8 @@ contract("ClientAndMM", async function (accounts) {
   });
 
 });
+
+// clearing price calculator as outlined in the paper.
 
 function getClearingPrice(buyOrders, sellOrders, minTickSize ) {
   let _numBuys=buyOrders.length;

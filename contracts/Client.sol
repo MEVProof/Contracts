@@ -14,6 +14,29 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 contract ClientAndMM{
     
+    function hash(
+        bytes memory input
+        ) public view returns (bytes32) {
+         return bytes32(keccak256(input));
+    }
+
+    // should be nonReentrant 
+    // this function is the key part of verification, and is currently a placeholder
+    function verifyProof(
+        bytes32 proof,
+        uint256[6] memory input
+        ) public view returns (bool) {
+        return true;
+    }
+
+    function HashOrderTest(Order memory _order, bytes32 expectedHash) public returns (bytes32 hashed) {
+        hashed = keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner));
+        emit OrderHashed(_order, hashed, expectedHash);
+
+        //require(keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner)) == _orderHash, "order does not match commitment");
+
+    }
+
     // Tornado initialisation variables
     //using SafeERC20 for IERC20;
     //was IERC20
@@ -49,9 +72,13 @@ contract ClientAndMM{
     //Exchange variables from Padraic's code
     uint256 _wTight=type(uint256).max;
     
-    uint256 constant _decimalPrecisionPoints=5;
+    uint256 constant _decimalPrecisionPoints=10;
     uint256 constant _clearingPricePrecision = 10**_decimalPrecisionPoints;
-    uint256 _minTickSize=10**(_decimalPrecisionPoints-2);
+
+    // here I have programmed the tick size precision to be less than the price/ volume precision to give some room for error. 
+    uint256 _minTickSizePrecision=_decimalPrecisionPoints-2;
+    
+    uint256 _minTickSize=10**_minTickSizePrecision;
     uint256 _currentAuctionNotional=0;
     uint256 constant _anyWidthValue = type(uint256).max;
     uint256 constant _marketOrderValue = type(uint256).max;
@@ -76,7 +103,12 @@ contract ClientAndMM{
         address _owner;
     }
 
-    
+    //used to track contract balance check updates to identify any problems with transfers
+    uint ticker=0;
+    event ContractBalanceCheck(uint checkNumber,uint256 tokenA, uint256 tokenB);
+    event CheckerEvent1(uint256 clearingPrice, uint256 buyVolume, uint256 sellVolume);
+    event OrderHashed(Order order, bytes32 hashed, bytes32 expectedHash);
+
 
     constructor(IERC20 token_a, IERC20 token_b){
 
@@ -99,20 +131,31 @@ contract ClientAndMM{
         _phase = Phase.Commit;
     }
 
+    // housekeeping functions needed to transition between phases. In reality we want these 
+    // automated, or incentive compatible. 
+
+    function Move_To_Commit_Phase( 
+        ) external returns (bool) {
+        _phase = Phase.Commit;
+        return true;
+    }
+    function Move_To_Reveal_Phase( 
+        ) external returns (bool) {
+        _phase = Phase.Reveal;
+        return true;
+    }
+    function Move_To_Resolution_Phase( 
+        ) external returns (bool) {
+        _phase = Phase.Resolution;
+        return true;
+    }
+
     // should be nonReentrant 
 
     function Client_Register(bytes32 _regId) public payable returns (bool) {
         require(msg.value >= (_escrowClient + _relayerFee), "Client register must deposit escrow + relayer fee");
         require(!_registrations[_regId], "Registration ID already taken");
         _registrations[_regId] = true;
-        return true;
-    }
-
-    // should be nonReentrant 
-    function verifyProof(
-        bytes32 proof,
-        uint256[6] memory input
-        ) public view returns (bool) {
         return true;
     }
 
@@ -150,8 +193,6 @@ contract ClientAndMM{
 
         return true;
     }
-
-    // should be nonReentrant 
     
     function MM_Commit( 
         bytes32 _marketHash
@@ -164,35 +205,7 @@ contract ClientAndMM{
         // record market commitment
         _committedMarkets[_marketHash] = true; 
     }
-
-    // should be nonReentrant 
-
-
-    function Move_To_Commit_Phase( 
-        ) external returns (bool) {
-        _phase = Phase.Commit;
-        return true;
-    }
-    function Move_To_Reveal_Phase( 
-        ) external returns (bool) {
-        _phase = Phase.Reveal;
-        return true;
-    }
-    function Move_To_Resolution_Phase( 
-        ) external returns (bool) {
-        _phase = Phase.Resolution;
-        return true;
-    }
-
-    event OrderHashed(Order order, bytes32 hashed, bytes32 expectedHash);
-
-    function HashOrderTest(Order memory _order, bytes32 expectedHash) public returns (bytes32 hashed) {
-        hashed = keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner));
-        emit OrderHashed(_order, hashed, expectedHash);
-
-        //require(keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner)) == _orderHash, "order does not match commitment");
-
-    }
+ 
     
     function Client_Reveal( 
         bytes32 _orderHash,
@@ -242,7 +255,6 @@ contract ClientAndMM{
         return true;
     }
 
-    // should be nonReentrant 
 
     function MM_Reveal( 
         bytes32 _marketHash,
@@ -309,104 +321,6 @@ contract ClientAndMM{
     }
 
 
-    function isSpent(bytes32 _nullifierHash) public view returns (bool) {
-        return _nullifierHashes[_nullifierHash];
-    }
-    
-
-    function _processReveal(IERC20 _token, uint256 _amount) internal {
-        _token.transferFrom(msg.sender, address(this), _amount);
-    }
-
-    function _processOrderSettlement(IERC20 _token, uint256 _amount, address recipient) internal {
-        _token.transfer( recipient , _amount);
-    }
-    
-    function _processClientCommit(
-        address payable _relayer
-        ) internal {
-        _relayer.transfer(_relayerFee);
-    }
-    
-    
-    function _checkRegIDs(bytes32 _regId) public view returns (bool regIDisPresent) {
-        return _registrations[_regId];
-    }
-
-    function _processMMEscrowReturn() internal {
-        payable(msg.sender).transfer(_escrowMM);
-    }
-    function _processClientEscrowReturn() internal {
-        payable(msg.sender).transfer(_escrowClient);
-    }
-
-    function _getContractBalance() public view returns (uint256){
-        return address(this).balance;
-    }
-
-    function _getPlayerBalance() public view returns (uint256){
-        return msg.sender.balance;
-    }
-
-    function _getMinTickSize() public view returns (uint256){
-        return _minTickSize;
-    }
-
-
-    function Abs(int256 x ) private pure returns (int256) {
-        return x >= 0 ? x : -x;
-    }
-    
-    function MulByClearingPrice(uint256 value, uint256 clearingPrice) pure internal returns (uint256) {
-        return SafeMath.div(SafeMath.mul(value, clearingPrice), _clearingPricePrecision);
-    }
-
-    function DivideByClearingPrice(uint256 value, uint256 clearingPrice) pure internal returns (uint256) {
-        return SafeMath.div(SafeMath.mul(value, _clearingPricePrecision), clearingPrice);
-    }
-
-    function DivideBy(uint256 numerator, uint256 denominator) pure internal returns (uint256) {
-        return SafeMath.div(numerator, denominator);
-    }
-
-    event CheckerEvent1(uint256 clearingPrice, uint256 buyVolume, uint256 sellVolume);
-
-    function _getNumBuyOrders() public view returns (uint256){
-        return _revealedBuyOrders.length;
-    }
-    function _getNumSellOrders() public view returns (uint256){
-        return _revealedSellOrders.length;
-    }
-    function _getWidthTight() public view returns (uint256){
-        return _wTight;
-    }
-
-    function _getBuyOrderPrice(uint index) public view returns (uint256){
-        return _revealedBuyOrders[index]._price;
-    }
-    function _getSellOrderPrice(uint index) public view returns (uint256){
-        return _revealedSellOrders[index]._price;
-    }
-    function _getBuyOrderSize(uint index) public view returns (uint256){
-        return _revealedBuyOrders[index]._size;
-    }
-    function _getSellOrderSize(uint index) public view returns (uint256){
-        return _revealedSellOrders[index]._size;
-    }
-    function _getBuyOrderWidth(uint index) public view returns (uint256){
-        return _revealedBuyOrders[index]._maxTradeableWidth;
-    }
-    function _getSellOrderWidth(uint index) public view returns (uint256){
-        return _revealedSellOrders[index]._maxTradeableWidth;
-    }
-
-    function hash(
-        bytes memory input
-        ) public view returns (bytes32) {
-         return bytes32(keccak256(input));
-    }
-
-
     function Settlement(uint256 clearingPrice, uint256 volumeSettled, int256 imbalance) public returns (bool) {
         // Deposit bounty
         require(_revealedSellOrders.length + _revealedBuyOrders.length > 0, "No orders");
@@ -428,8 +342,6 @@ contract ClientAndMM{
             }
         }
 
-        
-
         require(volumeSettled > 0 || (minSellPrice < maxBuyPrice), "req 1"); // TODO: Min sell less than max bid if no trades?
 
         // Compute buyVolume and sellVolume
@@ -450,9 +362,8 @@ contract ClientAndMM{
         uint ticker=0;
         emit CheckerEvent1(clearingPrice, buyVolume, sellVolume);
         
-
         require(Math.min(buyVolume, MulByClearingPrice(sellVolume, clearingPrice)) == volumeSettled, "req 2");        
-        require((int256(buyVolume) - int256(MulByClearingPrice(sellVolume, clearingPrice))) == imbalance, "req 3"); // TODO: Fix data types, safe cast
+        require((int256(buyVolume) - int256(MulByClearingPrice(sellVolume, clearingPrice))) == imbalance, "req 3"); 
 
         if (imbalance == 0) {
             SettleOrders(clearingPrice, buyVolume, sellVolume);
@@ -461,7 +372,6 @@ contract ClientAndMM{
         // As the auction is bid at CP, check if next price increment above clears higher volume OR smaller imbalance
         else if (imbalance > 0) {
             uint256 priceToCheck = clearingPrice + _minTickSize;
-
             uint256 buyVolumeNew = buyVolume;
             uint256 sellVolumeNew = sellVolume;
 
@@ -470,7 +380,6 @@ contract ClientAndMM{
                     buyVolumeNew -= _revealedBuyOrders[i]._size;
                 }
             }
-
             for (uint i = 0; i < revealedSellOrderCount; i++) {
                 if (clearingPrice < _revealedSellOrders[i]._price && _revealedSellOrders[i]._price <= priceToCheck) {
                     sellVolumeNew += _revealedSellOrders[i]._size;
@@ -480,6 +389,7 @@ contract ClientAndMM{
             sellVolumeNew = MulByClearingPrice(sellVolumeNew,priceToCheck);
 
             // If the next price clears less volume, or clears the same volume with a larger imbalance, the proposed CP is valid
+
             require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
                 (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && imbalance <= Abs(int256(buyVolumeNew) - int256(sellVolumeNew))), "we're in trouble"); // TODO: Fix data types
 
@@ -487,9 +397,9 @@ contract ClientAndMM{
         }
 
         // As the auction is offered at CP, check if next price increment below clears higher volume OR smaller imbalance
+
         else if (imbalance < 0) {
             uint256 priceToCheck = clearingPrice - _minTickSize;
-
             uint256 buyVolumeNew = buyVolume;
             uint256 sellVolumeNew = sellVolume;        
 
@@ -498,36 +408,28 @@ contract ClientAndMM{
                     buyVolumeNew += _revealedBuyOrders[i]._size;
                 }
             }
-
             for (uint i = 0; i < revealedSellOrderCount; i++) {
                 if (clearingPrice >= _revealedSellOrders[i]._price && _revealedSellOrders[i]._price > priceToCheck) {
                     sellVolumeNew -= _revealedSellOrders[i]._size;
                 }
             }
-
-            sellVolumeNew = MulByClearingPrice(sellVolumeNew, priceToCheck); // TODO: What is this?
+            sellVolumeNew = MulByClearingPrice(sellVolumeNew, priceToCheck); 
 
             require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
-                (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && Abs(imbalance) <= Abs((int256)(buyVolumeNew) - (int256)(sellVolumeNew)))); // TODO: Fix data types
+                (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && Abs(imbalance) <= Abs((int256)(buyVolumeNew) - (int256)(sellVolumeNew)))); 
 
             SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
         return true;
+
         // Return deposit + reward to caller
     }
 
-    event HeresTrouble(uint checkNumber, uint256 returnToSender, uint256 remainder);
-
-    uint ticker=0;
-    event ContractBalanceCheck(uint checkNumber,uint256 tokenA, uint256 tokenB);
-   
 
     function SettleOrders(uint256 clearingPrice, uint256 buyVolume, uint256 sellVolume) private {
         
         uint revealedSellOrderCount = _revealedSellOrders.length;
         uint revealedBuyOrderCount = _revealedBuyOrders.length;
-
-        uint256 problemNumber;
 
         
         sellVolume = MulByClearingPrice(sellVolume, clearingPrice); 
@@ -560,8 +462,8 @@ contract ClientAndMM{
                     // Return tokens not going to be exchanged
 
                     uint256 transferQty = DivideBy(_revealedBuyOrders[i]._size * (buyVolume- sellVolume) , sizeProRate);
-
                     _processOrderSettlement(_tokenA, Math.min(transferQty,_aBalance), _revealedBuyOrders[i]._owner);
+
                     if(_aBalance>transferQty){
                         _aBalance -=transferQty;
                     } else {
@@ -574,8 +476,6 @@ contract ClientAndMM{
 
         // pro-rate buy orders at the min price above (or equal to) the clearing price
         if (sellVolume > buyVolume) { 
-            
-
             uint256 proRatePrice = 0;
             
             for (uint i = 0; i < revealedSellOrderCount; i++) {
@@ -583,28 +483,19 @@ contract ClientAndMM{
                     proRatePrice = Math.max(proRatePrice, _revealedSellOrders[i]._price);
                 }
             }
-
             uint256 sizeProRate = 0;
+
             for (uint i = 0; i < revealedSellOrderCount; i++) {
                 if (_revealedSellOrders[i]._price == proRatePrice) {
                     sizeProRate += _revealedSellOrders[i]._size;
                 }
             }
-
             for (uint i = 0; i < revealedSellOrderCount; i++) {
                 if (_revealedSellOrders[i]._price == proRatePrice) {                    
                     // Return tokens not going to be exchanged
-
-                    
                     uint256 transferQty = DivideBy(_revealedSellOrders[i]._size * (sellVolume- buyVolume) , MulByClearingPrice(sizeProRate,clearingPrice));
-                    
-
-        
+     
                     _revealedSellOrders[i]._size -= transferQty;
-                    
-                    //emit HeresTrouble(ticker++, transferQty, _revealedSellOrders[i]._size);
-
-                    // TODO: Handle return codes.
                     _processOrderSettlement(_tokenB, transferQty, _revealedSellOrders[i]._owner);
                     
                     if(_bBalance>transferQty){
@@ -625,9 +516,9 @@ contract ClientAndMM{
             if (_revealedBuyOrders[i]._price >= clearingPrice || _revealedBuyOrders[i]._price == _marketOrderValue) {
                 uint256 tokenTradeSize = DivideByClearingPrice(_revealedBuyOrders[i]._size, clearingPrice); // order.size / clearingPrice;
 
-                //emit HeresTrouble(ticker++, tokenTradeSize, _revealedBuyOrders[i]._size);
                 _processOrderSettlement(_tokenB, Math.min(tokenTradeSize,_bBalance), _revealedBuyOrders[i]._owner);
                 emit ContractBalanceCheck(ticker++, _tokenA.balanceOf(address(this)), _tokenB.balanceOf(address(this)));
+
                 if(_bBalance>tokenTradeSize){
                     _bBalance -=tokenTradeSize;
                 } else {
@@ -635,6 +526,7 @@ contract ClientAndMM{
                 }
             } else if (_revealedBuyOrders[i]._price < clearingPrice) {
                 //return tokens to players not trading
+
                 _processOrderSettlement(_tokenA, Math.min(_revealedBuyOrders[i]._size,_aBalance), _revealedBuyOrders[i]._owner);
                 emit ContractBalanceCheck(ticker++, _tokenA.balanceOf(address(this)), _tokenB.balanceOf(address(this)));
                 if(_aBalance>_revealedBuyOrders[i]._size){
@@ -661,7 +553,6 @@ contract ClientAndMM{
             } else if (_revealedSellOrders[i]._price > clearingPrice) {
                 //return tokens to players not trading
 
-
                 _processOrderSettlement(_tokenB, Math.min(_revealedSellOrders[i]._size,_bBalance), _revealedSellOrders[i]._owner);
                 emit ContractBalanceCheck(ticker++, _tokenA.balanceOf(address(this)), _tokenB.balanceOf(address(this)));
                 if(_bBalance>_revealedSellOrders[i]._size){
@@ -685,5 +576,160 @@ contract ClientAndMM{
         //_lastPhaseChangeAtBlockHeight = block.number; // TODO block.number == blockheight?
     }
 
+    //proceeding _process... functions perform token/ Eth transfers
+
+    function _processReveal(IERC20 _token, uint256 _amount) internal {
+        _token.transferFrom(msg.sender, address(this), _amount);
+    }
+
+    function _processOrderSettlement(IERC20 _token, uint256 _amount, address recipient) internal {
+        _token.transfer( recipient , _amount);
+    }
+    
+    function _processClientCommit(
+        address payable _relayer
+        ) internal {
+        _relayer.transfer(_relayerFee);
+    }
+
+    function _processMMEscrowReturn() internal {
+        payable(msg.sender).transfer(_escrowMM);
+    }
+    function _processClientEscrowReturn() internal {
+        payable(msg.sender).transfer(_escrowClient);
+    }
+
+    
+    // proceeding functions are necessary to perform 'precise' multiplication and division
+
+    function Abs(int256 x ) private pure returns (int256) {
+        return x >= 0 ? x : -x;
+    }
+    
+    function MulByClearingPrice(uint256 value, uint256 clearingPrice) pure internal returns (uint256) {
+        return SafeMath.div(SafeMath.mul(value, clearingPrice), _clearingPricePrecision);
+    }
+
+    function DivideByClearingPrice(uint256 value, uint256 clearingPrice) pure internal returns (uint256) {
+        return SafeMath.div(SafeMath.mul(value, _clearingPricePrecision), clearingPrice);
+    }
+
+    function DivideBy(uint256 numerator, uint256 denominator) pure internal returns (uint256) {
+        return SafeMath.div(numerator, denominator);
+    }
+
+    // proceeding functions return various pieces of information that should be checked 
+    // BEFORE interacting with the blockchain
+
+    // check if registration ID exists
+
+    function _checkRegIDs(bytes32 _regId) public view returns (bool regIDisPresent) {
+        return _registrations[_regId];
+    }
+
+    function isSpent(bytes32 _nullifierHash) public view returns (bool) {
+        return _nullifierHashes[_nullifierHash];
+    }
+
+    function _getContractBalance() public view returns (uint256){
+        return address(this).balance;
+    }
+
+    function _getPlayerBalance() public view returns (uint256){
+        return msg.sender.balance;
+    }
+
+    function _getMinTickSize() public view returns (uint256){
+        return _minTickSize;
+    }
+
+    function _getNumBuyOrders() public view returns (uint256){
+        return _revealedBuyOrders.length;
+    }
+    function _getNumSellOrders() public view returns (uint256){
+        return _revealedSellOrders.length;
+    }
+    function _getWidthTight() public view returns (uint256){
+        return _wTight;
+    }
+
+    function _getBuyOrderPrice(uint index) public view returns (uint256){
+        return _revealedBuyOrders[index]._price;
+    }
+    function _getSellOrderPrice(uint index) public view returns (uint256){
+        return _revealedSellOrders[index]._price;
+    }
+    function _getBuyOrderSize(uint index) public view returns (uint256){
+        return _revealedBuyOrders[index]._size;
+    }
+    function _getSellOrderSize(uint index) public view returns (uint256){
+        return _revealedSellOrders[index]._size;
+    }
+    function _getBuyOrderWidth(uint index) public view returns (uint256){
+        return _revealedBuyOrders[index]._maxTradeableWidth;
+    }
+    function _getSellOrderWidth(uint index) public view returns (uint256){
+        return _revealedSellOrders[index]._maxTradeableWidth;
+    }
+
+
+    //The proceeding functions should be implemented offline
+    // For now, they centralise the calculations being done in the JS test cases. 
+
+    uint256 solVolumeSettled ;
+    int256 solImbalance;
+
+    function _getSolImbalance() public view returns (int256){
+        return solImbalance;
+    }
+
+    function _getSolVolumeSettled() public view returns (uint256){
+        return solVolumeSettled;
+    }
+
+    // takes a proposed clearing price, and ensures it matches with volume settled and 
+    //imbalance
+    // Does not check if the proposed value maximises volume/ minimises imbalance
+
+    function clearingPriceConvertor(uint256 clearingPrice, uint256 volumeSettled, int256 imbalance) public {
+        // Deposit bounty
+        require(_revealedSellOrders.length + _revealedBuyOrders.length > 0, "No orders");
+
+        uint256 revealedBuyOrderCount = _revealedBuyOrders.length;
+        uint256 revealedSellOrderCount = _revealedSellOrders.length;
+        // Compute max(buyOrders.price) and min(sellOrders.price)
+        uint256 maxBuyPrice = 0;
+        uint256 minSellPrice = type(uint256).max;
+
+        for (uint i = 0; i < revealedBuyOrderCount; i++) {
+            if (_revealedBuyOrders[i]._price > maxBuyPrice) {
+                maxBuyPrice = _revealedBuyOrders[i]._price;
+            }
+        }
+        for (uint i = 0; i < revealedSellOrderCount; i++) {
+            if (_revealedSellOrders[i]._price < minSellPrice) {
+                minSellPrice = _revealedSellOrders[i]._price;
+            }
+        }
+
+        // Compute buyVolume and sellVolume
+        uint256 buyVolume = 0;
+        uint256 sellVolume = 0;        
+
+        for (uint i = 0; i < revealedBuyOrderCount; i++) {
+            if (_revealedBuyOrders[i]._price >= clearingPrice) {
+                buyVolume += _revealedBuyOrders[i]._size;
+            }
+        }
+
+        for (uint i = 0; i < revealedSellOrderCount; i++) {
+            if (_revealedSellOrders[i]._price <= clearingPrice) {
+                sellVolume += _revealedSellOrders[i]._size;
+            }
+        }
+        solVolumeSettled =Math.min(buyVolume, MulByClearingPrice(sellVolume, clearingPrice));        
+        solImbalance=int256(buyVolume) - int256(MulByClearingPrice(sellVolume, clearingPrice));
+
+    }
     
 }
