@@ -111,6 +111,9 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         return true;
     }
+
+    event OrderCommited(bytes32 hashed);
+
     function Client_Commit( 
         bytes calldata _proof,
         bytes32 _root,
@@ -142,13 +145,15 @@ contract ClientAndMM is MerkleTreeWithHistory {
         // If so we'll need to rework the lines below - Padraic
 
         // record nullifier hash
-        _nullifierHashes[_nullifierHash]= true;
+        _nullifierHashes[_nullifierHash] = true;
 
         // record order commitment
         _committedOrders[_orderHash] = true;
 
         // pay relayer
         _processClientCommit(payable(msg.sender));
+
+        emit OrderCommited(_orderHash);
 
         return true;
     }
@@ -190,7 +195,10 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
     function HashOrderTest(Order memory _order, bytes32 expectedHash) public returns (bytes32 hashed) {
         hashed = keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner));
-        emit OrderHashed(_order, hashed, expectedHash);
+
+        bytes32 hashMod = bytes32(uint256(hashed) % FIELD_SIZE);
+
+        emit OrderHashed(_order, hashMod, expectedHash);
 
         //require(keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner)) == _orderHash, "order does not match commitment");
 
@@ -208,12 +216,13 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         HashOrderTest(_order, _orderHash);
 
-        require(_phase== Phase.Reveal, "Phase should be Reveal");
-        require(hash(abi.encodePacked([_nullifier, _randomness])) == _regId, "secrets don't match registration ID");
+        require(_phase == Phase.Reveal, "Phase should be Reveal");
+        // TODO: See if this is needed. The code below won't work since we're hashing using Pederson in the Tree and not keccak256 - Padraic
+        //require(hash(abi.encodePacked(_nullifier, _randomness])) == _regId, "secrets don't match registration ID");
         // this should hash all order information. Ensure abi.encodePacked maps uniquely.
 
         require(_committedOrders[_orderHash], "order not committed");
-        require(keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner)) == _orderHash, "order does not match commitment");
+        require(bytes32(uint256(keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner))) % FIELD_SIZE) == _orderHash, "order does not match commitment");
 
         require(_registrations[_regId], "The registration doesn't exist");        
         
