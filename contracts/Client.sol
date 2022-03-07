@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "./MerkleTreeWithHistory.sol";
 
 interface IVerifier {
-    function verifyProof(bytes calldata proof, uint[6] calldata inputs) external view returns (bool r);
+    function verifyProof(bytes calldata proof, uint256[6] calldata inputs) external view returns (bool r);
 }
 
 contract ClientAndMM is MerkleTreeWithHistory {
@@ -119,15 +119,6 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         return true;
     }
-
-    event ClientCommitment(bytes _proof,
-        bytes32 _root,
-        bytes32 _nullifierHash,
-        bytes32 _orderHash,
-        address payable _relayer,
-        uint256 _fee,
-        uint256 _refund);
-
     function Client_Commit( 
         bytes calldata _proof,
         bytes32 _root,
@@ -144,12 +135,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
         require(isKnownRoot(_root), "Cannot find your merkle root"); 
         // Make sure to use a recent one
 
-        emit ClientCommitment(_proof, _root, _nullifierHash, _orderHash, _relayer, _fee, _refund);
-
-  //      return true;
-
-        require(
-            _verifier.verifyProof(
+        require(_verifier.verifyProof(
                 _proof,
                 [uint256(_root), 
                 uint256(_nullifierHash), 
@@ -157,9 +143,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
                 uint256(uint160(address(_relayer))), 
                 _fee, 
                 _refund]
-            ),
-            "Invalid withdraw proof"
-        );
+        ), "Proof failed validation");
 
         // TODO: Do we want to allow commiting a new order using the same deposit? Eg amending an
         // order before the end of the commit phase without burning a deposit?

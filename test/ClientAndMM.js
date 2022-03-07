@@ -16,6 +16,9 @@ chai.use(chaiBn(BN));
 
 const expect = chai.expect;
 
+const ffUtils = require('ffjavascript').utils;
+const leBuff2int = ffUtils.leBuff2int;
+
 
 const TokenA = artifacts.require("TokenA");
 const TokenB = artifacts.require("TokenB");
@@ -33,7 +36,7 @@ const circomlib = require('circomlib');
 const Utils = require('./Utils');
 
 const pedersenHash = (data) => circomlib.babyJub.unpackPoint(circomlib.pedersenHash.hash(data))[0]
-const rbigint = (nbytes) => snarkjs.bigInt.leBuff2int(crypto.randomBytes(nbytes))
+const rbigint = (nbytes) => leBuff2int(crypto.randomBytes(nbytes))
 const toFixedHex = (number, length = 32) =>
   '0x' +
   bigInt(number)
@@ -154,19 +157,9 @@ contract("ClientAndMM", async function (accounts) {
   // console.log(sellOrders);
   // console.log(markets);
 
-  const deposit = Utils.GenerateDeposit();
+  deposit = Utils.GenerateDeposit();
   const newDeposit = Utils.GenerateDeposit();
   const order = new Utils.Order(true, 500, 100, 10000, pawn);
-
-  let proof= rbigint(31).toString();
-  let root= rbigint(31).toString();
-  
-  const clientCommitInput = {
-    _orderHash: order.GetSolidityHash(),
-    _proof: web3.eth.abi.encodeParameter('uint256', proof),
-    _root: web3.eth.abi.encodeParameter('uint256', root),
-    _nullifierHash: deposit.nullifierHashHex,
-  };
 
   const market = new Utils.MarketMakerOrder(99, 10000, 100, 10, bishop);
 
@@ -191,7 +184,17 @@ contract("ClientAndMM", async function (accounts) {
   });
 
   it("should register properly", async function () {  
-    reg = await inst.Client_Register(deposit.commitmentHex,{from: pawn, value: clientDepositAmount});  
+    reg = await inst.Client_Register(deposit.commitmentHex, { from: pawn, value: clientDepositAmount});  
+
+    deposits = [];
+
+    for (i = 0; i < 10; i++){
+      deposits[i] = Utils.GenerateDeposit();
+
+      await inst.Client_Register(deposits[i].commitmentHex, { from: pawn, value: clientDepositAmount});
+    }
+
+    deposit = deposits[7];
   });
 
   it("should not register properly", async function () {
@@ -200,13 +203,7 @@ contract("ClientAndMM", async function (accounts) {
 
   it("should add client commitment:", async function () {
     let { proof, args } = await Utils.GenerateProofOfDeposit(inst, deposit, order.GetSolidityHash(), relayerAddress = relayer)
-
-    console.log(proof);
-    console.log(args);
-
-    reg = await inst.Client_Commit(proof, ...args, {from: relayer, gasLimit: 10000000});
-
-    assert.fail("Fail");
+    reg = await inst.Client_Commit(proof, ...args, {from: relayer, gasLimit: 10000000});  
   });
 
   // it("should add MM commitment:", async function () {

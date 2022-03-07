@@ -1,20 +1,35 @@
 const snarkjs = require('snarkjs');
 const circomlib = require('circomlib');
 const merkleTree = require('fixed-merkle-tree')
-const buildGroth16 = require('websnark/src/groth16')
-const websnarkUtils = require('websnark/src/utils')
-const fs = require('fs')
-const bigInt = snarkjs.bigInt;
+const ffUtils = require('ffjavascript').utils;
+const leBuff2int = ffUtils.leBuff2int;
+const leInt2Buff = ffUtils.leInt2Buff;
+const stringifyBigInts = ffUtils.stringifyBigInts;
+
+const bigInteger = require('big-integer');
+const bigNumber = require('bn.js');
+
+const {prove} = require('./prover');
+
+const { poseidon } = require('circomlib')
+
+const FIELD_SIZE = BigInt(
+    '21888242871839275222246405745257275088548364400416034343698204186575808495617',
+  )  
+
+const poseidonHash = (items) => BigInt(poseidon(items).toString())
+const poseidonHash2 = (a, b) => poseidonHash([a, b])
+
 
 /** Generate random number of specified byte length */
-const rbigint = nbytes => snarkjs.bigInt.leBuff2int(crypto.randomBytes(nbytes))
+const rbigint = nbytes => leBuff2int(crypto.randomBytes(nbytes))
 
 /** Compute pedersen hash */
 const pedersenHash = data => circomlib.babyJub.unpackPoint(circomlib.pedersenHash.hash(data))[0]
 
 /** BigNumber to hex string of specified length */
 function toHex(number, length = 32) {
-    const str = number instanceof Buffer ? number.toString('hex') : snarkjs.bigInt(number).toString(16)
+    const str = number instanceof Buffer ? number.toString('hex') : BigInt(number).toString(16)
     return '0x' + str.padStart(length * 2, '0')
 }
 
@@ -28,12 +43,15 @@ class Order {
     }
 
     GetSolidityHash() {
-        return web3.utils.soliditySha3(
+        const hash = BigInt(web3.utils.soliditySha3(
             { t: 'bool', v: this._isBuyOrder },
             { t: 'uint256', v: this._size },
             { t: 'uint256', v: this._price },
             { t: 'uint256', v: this._maxTradeableWidth },
-            { t: 'address', v: this._owner });
+            { t: 'address', v: this._owner }));
+
+        const modHash = hash.mod(FIELD_SIZE).toString();
+        return modHash;
     }
 
     Unwrap() {
@@ -85,10 +103,10 @@ class Deposit {
 
         this.preimage = Buffer.concat([this.nullifier.leInt2Buff(31), this.randomness.leInt2Buff(31)]);
 
-        this.commitment = pedersenHash(this.preimage);
+        this.commitment = BigInt(pedersenHash(this.preimage)).mod(FIELD_SIZE).toString();
         this.commitmentHex = toHex(this.commitment)
 
-        this.nullifierHash = pedersenHash(this.nullifier.leInt2Buff(31));
+        this.nullifierHash = BigInt(pedersenHash(this.nullifier.leInt2Buff(31))).mod(FIELD_SIZE).toString();
         this.nullifierHashHex = toHex(this.nullifierHash);
     }
 }
@@ -106,7 +124,7 @@ async function GenerateMerklePath(contract, deposit) {
     const leaves = events
         .sort((a, b) => a.returnValues.leafIndex - b.returnValues.leafIndex) // Sort events in chronological order
         .map(e => e.returnValues.commitment)
-    const tree = new merkleTree(MERKLE_TREE_HEIGHT, leaves)
+    const tree = new merkleTree(MERKLE_TREE_HEIGHT, leaves, { hashFunction: poseidonHash2})
 
     // Find current commitment in the tree
     const depositEvent = events.find(e => e.returnValues.commitment === toHex(deposit.commitment))
@@ -114,11 +132,11 @@ async function GenerateMerklePath(contract, deposit) {
 
     // Validate that our data is correct
     const root = tree.root()
-    // const isValidRoot = await contract.methods.isKnownRoot(toHex(root)).call()
-    // const isSpent = await contract.methods.isSpent(toHex(deposit.nullifierHash)).call()
+    // const isValidRoot = await contract.isKnownRoot(toHex(root)).call()
+    // const isSpent = await contract.isSpent(toHex(deposit.nullifierHash)).call()
     // assert(isValidRoot === true, 'Merkle tree is corrupted')
     // assert(isSpent === false, 'The note is already spent')
-    // assert(leafIndex >= 0, 'The deposit is not found in the tree')
+    assert(leafIndex >= 0, 'The deposit is not found in the tree')
 
     // Compute merkle proof of our commitment
     const { pathElements, pathIndices } = tree.path(leafIndex)
@@ -130,36 +148,29 @@ async function GenerateProofOfDeposit(contract, deposit, orderHash, relayerAddre
     const { root, pathElements, pathIndices } = await GenerateMerklePath(contract, deposit)
   
     // Prepare circuit input
-    const input = {
+    const input = stringifyBigInts({
       // Public snark inputs
       root: root,
       nullifierHash: deposit.nullifierHash,
-      orderHash: 0, // TODO: orderHash,
-      relayer: bigInt(relayerAddress),
-      fee: bigInt(fee),
-      refund: bigInt(refund),
+      orderHash: BigInt(orderHash),
+      relayer: BigInt(relayerAddress),
+      fee: BigInt(fee),
+      refund: BigInt(refund),
   
       // Private snark inputs
       nullifier: deposit.nullifier,
       secret: deposit.randomness,
       pathElements: pathElements,
       pathIndices: pathIndices,
-    }
+    });
 
-    groth16 = await buildGroth16()
-    circuit = require(__dirname + '/../build/circuits/provideEscrow.json')
-    proving_key = fs.readFileSync(__dirname + '/../build/circuits/provideEscrow_proving_key.bin').buffer
+    const proof = await prove(input, `./artifacts/circuits/provideEscrow`)
 
-    console.log('Generating SNARK proof')
-    console.time('Proof time')
-    const proofData = await websnarkUtils.genWitnessAndProve(groth16, input, circuit, proving_key)
-    const { proof } = websnarkUtils.toSolidityInput(proofData)
-    console.timeEnd('Proof time')
-  
+
     const args = [
       toHex(input.root),
       toHex(input.nullifierHash),
-      toHex(input.orderHash, 20),
+      toHex(input.orderHash),
       toHex(input.relayer, 20),
       toHex(input.fee),
       toHex(input.refund),
@@ -168,17 +179,10 @@ async function GenerateProofOfDeposit(contract, deposit, orderHash, relayerAddre
     return { proof, args }
   }
 
-// exports = {
-//     Order,
-//     MarketMakerOrder,
-//     Deposit,
-//     GenerateDeposit,
-//     GenerateMerkleProof
-// }
-
 exports.Order = Order;
 exports.MarketMakerOrder = MarketMakerOrder;
 exports.Deposit = Deposit;
 exports.GenerateDeposit = GenerateDeposit;
 exports.GenerateMerkleProof = GenerateMerklePath;
 exports.GenerateProofOfDeposit = GenerateProofOfDeposit;
+exports.toHex = toHex;
