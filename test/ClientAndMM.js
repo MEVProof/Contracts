@@ -84,29 +84,9 @@ function generateSellOrders(accounts) {
 function generateDeposits() {
   let deposits=[];
   for (let step = 0; step < numOrders; step++) {
-    let deposit = {
-      nullifier: rbigint(31).toString(),
-      randomness: rbigint(31).toString(),
-      newcommitment: web3.utils.soliditySha3(rbigint(31).toString())
-    };
-    deposit.commitment = web3.utils.soliditySha3(web3.eth.abi.encodeParameters(['uint256','uint256'], [deposit.nullifier, deposit.randomness] ));
-    deposits.push(deposit);
+    deposits.push(Utils.GenerateDeposit(withNextHop = true));
   }
   return deposits;
-}
-
-function generateClientCommitInfo(orders, deposits) {
-  let commits=[]; 
-  for (let step = 0; step < numOrders; step++) {
-    let proof= rbigint(31).toString();
-    let root= rbigint(31).toString();
-    commits.push({
-        _proof: web3.eth.abi.encodeParameter('uint256',proof),
-        _root: web3.eth.abi.encodeParameter('uint256',root),
-        _nullifierHash: web3.utils.soliditySha3(deposits[step].nullifier),
-    });
-  }
-  return commits;
 }
 
 function generateMarkets(accounts) {
@@ -144,8 +124,6 @@ contract("ClientAndMM", async function (accounts) {
   const sellOrders = generateSellOrders(accounts);
   const buyOrderDeposits = generateDeposits();
   const sellOrderDeposits = generateDeposits();
-  const buyCommitInputs = generateClientCommitInfo(buyOrders, buyOrderDeposits);
-  const sellCommitInputs = generateClientCommitInfo(sellOrders, sellOrderDeposits);
   const markets = generateMarkets(accounts);
 
   // console.log(buyOrders);
@@ -155,7 +133,7 @@ contract("ClientAndMM", async function (accounts) {
 
   // let pawn = accounts[0];
   // let relayer = accounts[1];
-  // let bishop = accounts[2];
+  let bishop = accounts[2];
   // let knight = accounts[3];
   // const deposit = Utils.GenerateDeposit();
   // const newDeposit = Utils.GenerateDeposit();
@@ -226,35 +204,43 @@ contract("ClientAndMM", async function (accounts) {
   });
   it("should register properly", async function () {
     for (let step = 0; step < numOrders; step++) {
-      await inst.Client_Register(buyOrderDeposits[step].commitment, {from: accounts[step], value: clientDepositAmount});
-      await inst.Client_Register(sellOrderDeposits[step].commitment, {from: accounts[numOrders+step], value: clientDepositAmount});
+      await inst.Client_Register(buyOrderDeposits[step].commitmentHex, {from: accounts[step], value: clientDepositAmount});
+      await inst.Client_Register(sellOrderDeposits[step].commitmentHex, {from: accounts[numOrders+step], value: clientDepositAmount});
     }
   });
   it("should add client commitments", async function () {
     for (let step = 0; step < numOrders; step++) {
-      await inst.Client_Commit(buyOrders[step].GetSolidityHash(), buyCommitInputs[step]._proof, buyCommitInputs[step]._root, buyCommitInputs[step]._nullifierHash,  {from: accounts[step]});
-      await inst.Client_Commit(sellOrders[step].GetSolidityHash(), sellCommitInputs[step]._proof, sellCommitInputs[step]._root, sellCommitInputs[step]._nullifierHash,  {from: accounts[numOrders+step]});    
+      let buyProof = await Utils.GenerateProofOfDeposit(inst, buyOrderDeposits[step], buyOrders[step].GetSolidityHash());
+      let sellProof = await Utils.GenerateProofOfDeposit(inst, sellOrderDeposits[step], sellOrders[step].GetSolidityHash());
+
+      await inst.Client_Commit(buyProof.proof, ...buyProof.args,  {from: accounts[step]});
+      await inst.Client_Commit(sellProof.proof, ...sellProof.args,  {from: accounts[step]});
     }
   });
+
   it("should add MM commitments", async function () {
     for (let step = 0; step < numMarkets; step++) {
       await inst.MM_Commit(markets[step].GetSolidityHash(), {from: accounts[(2*numOrders)+step], value: tenEth});    
     }
   });
+
   it("should move to Reveal phase", async function () {
     reg= await inst.Move_To_Reveal_Phase();
   });
+
   it("should reveal clients", async function () {
     for (let step = 0; step < numOrders; step++) {
-      await inst.Client_Reveal(buyOrders[step].GetSolidityHash(), buyOrders[step].Unwrap(), buyOrderDeposits[step].nullifier, buyOrderDeposits[step].randomness, buyOrderDeposits[step].commitment, buyOrderDeposits[step].newcommitment, {from: accounts[step], value: oneEth});
-      await inst.Client_Reveal(sellOrders[step].GetSolidityHash(), sellOrders[step].Unwrap(), sellOrderDeposits[step].nullifier, sellOrderDeposits[step].randomness, sellOrderDeposits[step].commitment, sellOrderDeposits[step].newcommitment,  {from: accounts[numOrders+step], value: oneEth});    
+      await inst.Client_Reveal(Utils.toHex(buyOrders[step].GetSolidityHash()), buyOrders[step].Unwrap(), buyOrderDeposits[step].nullifierHex, buyOrderDeposits[step].randomnessHex, buyOrderDeposits[step].commitmentHex, buyOrderDeposits[step].nextHop.commitmentHex, {from: accounts[step], value: oneEth});
+      await inst.Client_Reveal(Utils.toHex(sellOrders[step].GetSolidityHash()), sellOrders[step].Unwrap(), sellOrderDeposits[step].nullifierHex, sellOrderDeposits[step].randomnessHex, sellOrderDeposits[step].commitmentHex, sellOrderDeposits[step].nextHop.commitmentHex,  {from: accounts[numOrders+step], value: oneEth});    
     }
   });
+
   it("should reveal MMs", async function () {
     for (let step = 0; step < numMarkets; step++) {
       await inst.MM_Reveal(markets[step].GetSolidityHash(), markets[step], {from: accounts[(2*numOrders)+step]});    
     }
   });
+
   it("get Clearing Price Info", async function () {  
     minTickSize = await inst._getMinTickSize();
     numBlockchainBuys = await inst._getNumBuyOrders();

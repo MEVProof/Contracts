@@ -94,7 +94,7 @@ class MarketMakerOrder {
     };
 }
 class Deposit {
-    constructor(nullifier, randomness) {
+    constructor(nullifier, randomness, nextHop = null) {
         this.nullifier = nullifier;
         this.randomness = randomness;
 
@@ -108,11 +108,13 @@ class Deposit {
 
         this.nullifierHash = BigInt(pedersenHash(this.nullifier.leInt2Buff(31))).mod(FIELD_SIZE).toString();
         this.nullifierHashHex = toHex(this.nullifierHash);
+
+        this.nextHop = nextHop;
     }
 }
 
-function GenerateDeposit() {
-    return new Deposit(rbigint(31), rbigint(31));
+function GenerateDeposit(withNextHop = false) {
+    return new Deposit(rbigint(31), rbigint(31), withNextHop ? GenerateDeposit() : null);
 }
 
 const MERKLE_TREE_HEIGHT = 20;
