@@ -6,7 +6,8 @@ const genContract = require('circomlib/src/poseidon_gencontract.js')
 
 // where Truffle will expect to find the results of the external compiler
 // command
-const outputPath = path.join(__dirname, '..', 'build', 'Hasher.json')
+const outputDir = path.join(__dirname, '..', 'build')
+const outputPath = path.join(outputDir, 'Hasher.json')
 
 function main() {
   const contract = {
@@ -15,6 +16,7 @@ function main() {
     bytecode: genContract.createCode(2),
   }
 
+  fs.mkdirSync(outputDir, { recursive: true })
   fs.writeFileSync(outputPath, JSON.stringify(contract, null, 2))
 }
 
