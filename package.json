@@ -2,7 +2,10 @@
   "scripts": {
     "build:circuit": "./scripts/buildCircuit.sh",
     "build:contract": "npx truffle compile",
-    "build": "npm run build:circuit && npm run build:contract"
+    "build": "npm run build:circuit && npm run build:contract",
+    "migrate:dev": "npx truffle migrate --network development --reset",
+    "test": "npx truffle test",
+    "ganache": "npx ganache-cli --miner.blockGasLimit 1000000000000000 --miner.callGasLimit 1000000000 --chain.allowUnlimitedContractSize true"
   },
   "devDependencies": {
     "@openzeppelin/contracts": "^4.4.2",

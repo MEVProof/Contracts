@@ -26,6 +26,7 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
-    - run: npm ci
-    - run: npx truffle compile      
-    - run: npx truffle test
+    - run: yarn install
+    - run: yarn build
+    - run: yarn ganache > /dev/null &
+    - run: yarn test
