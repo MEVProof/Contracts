@@ -1,43 +1,38 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity >=0.4.22 <0.9.0;
 
-
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
+import "./MerkleTreeWithHistory.sol";
 
+interface IVerifier {
+    function verifyProof(bytes calldata proof, uint256[6] calldata inputs) external view returns (bool r);
+}
 
-
-
-
-contract ClientAndMM{
-    
+contract ClientAndMM is MerkleTreeWithHistory {    
     function hash(
         bytes memory input
         ) public view returns (bytes32) {
          return bytes32(keccak256(input));
     }
 
-    // should be nonReentrant 
-    // this function is the key part of verification, and is currently a placeholder
-    function verifyProof(
-        bytes32 proof,
-        uint256[6] memory input
-        ) public view returns (bool) {
-        return true;
-    }
-
     function HashOrderTest(Order memory _order, bytes32 expectedHash) public returns (bytes32 hashed) {
         hashed = keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner));
-        emit OrderHashed(_order, hashed, expectedHash);
+
+        bytes32 hashMod = bytes32(uint256(hashed) % FIELD_SIZE);
+
+        emit OrderHashed(_order, hashMod, expectedHash);
 
         //require(keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner)) == _orderHash, "order does not match commitment");
-
     }
 
     // Tornado initialisation variables
+
+    IVerifier public immutable _verifier;
+
     //using SafeERC20 for IERC20;
     //was IERC20
     IERC20 public _tokenA;
@@ -70,10 +65,10 @@ contract ClientAndMM{
     Phase _phase;
 
 
-    uint _phaseLength;
-    uint _lastPhaseUpdate;
-    uint256 _wTight;
-    uint256 _currentAuctionNotional;
+    uint constant _phaseLength = 100;
+    uint _lastPhaseUpdate = 0;
+    uint256 _wTight = type(uint256).max;
+    uint256 _currentAuctionNotional = 0;
     
     uint256 constant _decimalPrecisionPoints  = 10;
     uint256 constant _clearingPricePrecision = 10**_decimalPrecisionPoints;
@@ -113,8 +108,10 @@ contract ClientAndMM{
 
 
 
-    constructor(IERC20 token_a, IERC20 token_b){
+    uint32 public constant _merkleTreeHeight = 20;
 
+    constructor(IVerifier verifier, IHasher hasher, IERC20 token_a, IERC20 token_b) MerkleTreeWithHistory(_merkleTreeHeight, hasher){
+        _verifier = verifier;
         _tokenA = token_a;
         _tokenB = token_b;
 
@@ -135,18 +132,6 @@ contract ClientAndMM{
 
         // initialise phase as Commit
         _phase = Phase.Commit;
-
-        // used to track and update the phase
-        _phaseLength=100;
-        _lastPhaseUpdate=0;
-
-        _currentAuctionNotional = 0;
-        _wTight = type(uint256).max;
-
-
-        
-
-
     }
 
     // housekeeping functions needed to transition between phases. In reality we want these 
@@ -188,44 +173,62 @@ contract ClientAndMM{
 
     // should be nonReentrant 
 
+    event Deposit(bytes32 indexed commitment, uint32 leafIndex, uint256 timestamp);
+
     function Client_Register(bytes32 _regId) public payable returns (bool) {
         require(msg.value >= (_escrowClient + _relayerFee), "Client register must deposit escrow + relayer fee");
         require(!_registrations[_regId], "Registration ID already taken");
+
+        uint32 insertedIndex = _insert(_regId);
         _registrations[_regId] = true;
+
+        emit Deposit(_regId, insertedIndex, block.timestamp);
+
         return true;
     }
 
+    event OrderCommited(bytes32 hashed);
+
     function Client_Commit( 
-        bytes32 _orderHash,
-        bytes32 _proof,
+        bytes calldata _proof,
         bytes32 _root,
-        bytes32 _nullifierHash
+        bytes32 _nullifierHash,
+        bytes32 _orderHash,
+        address payable _relayer,
+        uint256 _fee,
+        uint256 _refund
+
         ) external payable returns (bool) {
         require(!_nullifierHashes[_nullifierHash], "The note has been already spent");
         require(!_blacklistedNullifiers[_nullifierHash], "The note has been blacklisted");
         require(_phase==Phase.Commit, "Phase should be Commit" );
-        //require(isKnownRoot(_root), "Cannot find your merkle root"); 
+        require(isKnownRoot(_root), "Cannot find your merkle root"); 
         // Make sure to use a recent one
-        require(
-            verifyProof(
+
+        require(_verifier.verifyProof(
                 _proof,
                 [uint256(_root), 
                 uint256(_nullifierHash), 
                 uint256(_orderHash), 
-                uint256(uint160(msg.sender)), 
-                _relayerFee, 
-                _escrowClient]
-            ),
-            "Invalid withdraw proof"
-        );
+                uint256(uint160(address(_relayer))), 
+                _fee, 
+                _refund]
+        ), "Proof failed validation");
+
+        // TODO: Do we want to allow commiting a new order using the same deposit? Eg amending an
+        // order before the end of the commit phase without burning a deposit?
+        // If so we'll need to rework the lines below - Padraic
+
         // record nullifier hash
-        _nullifierHashes[_nullifierHash]= true;
+        _nullifierHashes[_nullifierHash] = true;
 
         // record order commitment
         _committedOrders[_orderHash] = true;
 
         // pay relayer
         _processClientCommit(payable(msg.sender));
+
+        emit OrderCommited(_orderHash);
 
         return true;
     }
@@ -254,12 +257,13 @@ contract ClientAndMM{
 
         HashOrderTest(_order, _orderHash);
 
-        require(_phase== Phase.Reveal, "Phase should be Reveal");
-        require(hash(abi.encodePacked([_nullifier, _randomness])) == _regId, "secrets don't match registration ID");
+        require(_phase == Phase.Reveal, "Phase should be Reveal");
+        // TODO: See if this is needed. The code below won't work since we're hashing using Pederson in the Tree and not keccak256 - Padraic
+        // require(hash(abi.encodePacked(_nullifier, _randomness)) == _regId, "secrets don't match registration ID");
         // this should hash all order information. Ensure abi.encodePacked maps uniquely.
 
         require(_committedOrders[_orderHash], "order not committed");
-        require(keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner)) == _orderHash, "order does not match commitment");
+        require(bytes32(uint256(keccak256(abi.encodePacked(_order._isBuyOrder, _order._size, _order._price, _order._maxTradeableWidth, _order._owner))) % FIELD_SIZE) == _orderHash, "order does not match commitment");
 
         require(_registrations[_regId], "The registration doesn't exist");        
         

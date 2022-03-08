@@ -1,4 +1,37 @@
-const snarkjs = require('snarkjs')
+const snarkjs = require('snarkjs');
+const circomlib = require('circomlib');
+const merkleTree = require('fixed-merkle-tree')
+const ffUtils = require('ffjavascript').utils;
+const leBuff2int = ffUtils.leBuff2int;
+const leInt2Buff = ffUtils.leInt2Buff;
+const stringifyBigInts = ffUtils.stringifyBigInts;
+
+const bigInteger = require('big-integer');
+const bigNumber = require('bn.js');
+
+const {prove} = require('./prover');
+
+const { poseidon } = require('circomlib')
+
+const FIELD_SIZE = BigInt(
+    '21888242871839275222246405745257275088548364400416034343698204186575808495617',
+  )  
+
+const poseidonHash = (items) => BigInt(poseidon(items).toString())
+const poseidonHash2 = (a, b) => poseidonHash([a, b])
+
+
+/** Generate random number of specified byte length */
+const rbigint = nbytes => leBuff2int(crypto.randomBytes(nbytes))
+
+/** Compute pedersen hash */
+const pedersenHash = data => circomlib.babyJub.unpackPoint(circomlib.pedersenHash.hash(data))[0]
+
+/** BigNumber to hex string of specified length */
+function toHex(number, length = 32) {
+    const str = number instanceof Buffer ? number.toString('hex') : BigInt(number).toString(16)
+    return '0x' + str.padStart(length * 2, '0')
+}
 
 class Order {
     constructor(isBuyOrder, size, price, maxTradeableWidth, account) {
@@ -10,12 +43,15 @@ class Order {
     }
 
     GetSolidityHash() {
-        return web3.utils.soliditySha3(
+        const hash = BigInt(web3.utils.soliditySha3(
             { t: 'bool', v: this._isBuyOrder },
-            { t: 'uint256', v: Number(this._size) },
-            { t: 'uint256', v: Number(this._price) },
-            { t: 'uint256', v: Number(this._maxTradeableWidth) },
-            { t: 'address', v: this._owner });
+            { t: 'uint256', v: toHex(this._size) },
+            { t: 'uint256', v: toHex(this._price) },
+            { t: 'uint256', v: toHex(this._maxTradeableWidth) },
+            { t: 'address', v: this._owner }));
+
+        const modHash = hash.mod(FIELD_SIZE).toString();
+        return modHash;
     }
 
     Unwrap() {
@@ -57,24 +93,97 @@ class MarketMakerOrder {
         }
     };
 }
-
-const rbigint = nbytes => snarkjs.bigInt.leBuff2int(crypto.randomBytes(nbytes))
 class Deposit {
-    constructor(nullifier, randomness) {              
-        this.nullifier = nullifier.toString();
-        this.randomness = randomness.toString();
+    constructor(nullifier, randomness, nextHop = null) {
+        this.nullifier = nullifier;
+        this.randomness = randomness;
 
-        // TODO: I think this is broken. nullifier and randomness are 31 bytes long not 32 - Padraic
-        this.commitment = web3.utils.soliditySha3(web3.eth.abi.encodeParameters(['uint256','uint256'], [this.nullifier, this.randomness] ));
-        this.nullifierHash = web3.utils.soliditySha3(this.nullifier)
-      }
+        this.nullifierHex = toHex(nullifier);
+        this.randomnessHex = toHex(randomness);
+
+        this.preimage = Buffer.concat([this.nullifier.leInt2Buff(31), this.randomness.leInt2Buff(31)]);
+
+        this.commitment = BigInt(pedersenHash(this.preimage)).mod(FIELD_SIZE).toString();
+        this.commitmentHex = toHex(this.commitment)
+
+        this.nullifierHash = BigInt(pedersenHash(this.nullifier.leInt2Buff(31))).mod(FIELD_SIZE).toString();
+        this.nullifierHashHex = toHex(this.nullifierHash);
+
+        this.nextHop = nextHop;
+    }
 }
 
-function GenerateDeposit() {
-    return new Deposit(rbigint(31), rbigint(31));
+function GenerateDeposit(withNextHop = false) {
+    return new Deposit(rbigint(31), rbigint(31), withNextHop ? GenerateDeposit() : null);
 }
+
+const MERKLE_TREE_HEIGHT = 20;
+
+async function GenerateMerklePath(contract, deposit) {
+    // Get all deposit events from smart contract and assemble merkle tree from them
+    console.log('Getting current state from tornado contract')
+    const events = await contract.getPastEvents('Deposit', { fromBlock: 0, toBlock: 'latest' })
+    const leaves = events
+        .sort((a, b) => a.returnValues.leafIndex - b.returnValues.leafIndex) // Sort events in chronological order
+        .map(e => e.returnValues.commitment)
+    const tree = new merkleTree(MERKLE_TREE_HEIGHT, leaves, { hashFunction: poseidonHash2})
+
+    // Find current commitment in the tree
+    const depositEvent = events.find(e => e.returnValues.commitment === toHex(deposit.commitment))
+    const leafIndex = depositEvent ? depositEvent.returnValues.leafIndex : -1
+
+    // Validate that our data is correct
+    const root = tree.root()
+    // const isValidRoot = await contract.isKnownRoot(toHex(root)).call()
+    // const isSpent = await contract.isSpent(toHex(deposit.nullifierHash)).call()
+    // assert(isValidRoot === true, 'Merkle tree is corrupted')
+    // assert(isSpent === false, 'The note is already spent')
+    assert(leafIndex >= 0, 'The deposit is not found in the tree')
+
+    // Compute merkle proof of our commitment
+    const { pathElements, pathIndices } = tree.path(leafIndex)
+    return { pathElements, pathIndices, root: tree.root() }
+}
+
+async function GenerateProofOfDeposit(contract, deposit, orderHash, relayerAddress = 0, fee = 1, refund = 1 ) {
+    // Compute merkle proof of our commitment
+    const { root, pathElements, pathIndices } = await GenerateMerklePath(contract, deposit)
+  
+    // Prepare circuit input
+    const input = stringifyBigInts({
+      // Public snark inputs
+      root: root,
+      nullifierHash: deposit.nullifierHash,
+      orderHash: BigInt(orderHash),
+      relayer: BigInt(relayerAddress),
+      fee: BigInt(fee),
+      refund: BigInt(refund),
+  
+      // Private snark inputs
+      nullifier: deposit.nullifier,
+      secret: deposit.randomness,
+      pathElements: pathElements,
+      pathIndices: pathIndices,
+    });
+
+    const proof = await prove(input, `./artifacts/circuits/provideEscrow`);
+
+    const args = [
+      toHex(input.root),
+      toHex(input.nullifierHash),
+      toHex(input.orderHash),
+      toHex(input.relayer, 20),
+      toHex(input.fee),
+      toHex(input.refund),
+    ]
+  
+    return { proof, args }
+  }
 
 exports.Order = Order;
 exports.MarketMakerOrder = MarketMakerOrder;
 exports.Deposit = Deposit;
 exports.GenerateDeposit = GenerateDeposit;
+exports.GenerateMerkleProof = GenerateMerklePath;
+exports.GenerateProofOfDeposit = GenerateProofOfDeposit;
+exports.toHex = toHex;
