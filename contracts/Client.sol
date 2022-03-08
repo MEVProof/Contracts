@@ -69,6 +69,7 @@ contract ClientAndMM{
 
     Phase _phase;
 
+
     uint _phaseLength;
     uint _lastPhaseUpdate;
     uint256 _wTight;
@@ -81,6 +82,7 @@ contract ClientAndMM{
     uint256 constant _minTickSize = 10**_minTickSizePrecision;
     uint256 _anyWidthValue = type(uint256).max;
     uint256 _marketOrderValue = type(uint256).max;
+
 
     enum Phase {
         Commit, Reveal, Resolution
@@ -102,11 +104,13 @@ contract ClientAndMM{
         address _owner;
     }
 
+
     //used to track contract balance check updates to identify any problems with transfers
     uint ticker=0;
     event ContractBalanceCheck(uint checkNumber,uint256 tokenA, uint256 tokenB);
     event CheckerEvent1(uint256 clearingPrice, uint256 buyVolume, uint256 sellVolume);
     event OrderHashed(Order order, bytes32 hashed, bytes32 expectedHash);
+
 
 
     constructor(IERC20 token_a, IERC20 token_b){
@@ -351,11 +355,11 @@ contract ClientAndMM{
     }
 
 
+
     function Settlement(uint256 clearingPrice, uint256 volumeSettled, int256 imbalance) external payable returns (bool) {
 
         require(msg.value >= (_settlementBounty), "Client register must deposit escrow + relayer fee");
         // Deposit bounty
-
 
         require(_revealedSellOrders.length + _revealedBuyOrders.length > 0, "No orders");
 
@@ -427,7 +431,7 @@ contract ClientAndMM{
             require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
                 (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && imbalance <= Abs(int256(buyVolumeNew) - int256(sellVolumeNew))), "we're in trouble"); // TODO: Fix data types
 
-            SettleOrders(clearingPrice, buyVolume, sellVolume);
+            //SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
 
         // As the auction is offered at CP, check if next price increment below clears higher volume OR smaller imbalance
@@ -452,8 +456,9 @@ contract ClientAndMM{
             require((Math.min(buyVolumeNew, sellVolumeNew) < volumeSettled) || 
                 (Math.min(buyVolumeNew, sellVolumeNew) == volumeSettled && Abs(imbalance) <= Abs((int256)(buyVolumeNew) - (int256)(sellVolumeNew)))); 
 
-            SettleOrders(clearingPrice, buyVolume, sellVolume);
+            //SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
+
         
 
         // Return deposit + reward to caller. Currently just returning deposit as contract does not have a balance necessarily
