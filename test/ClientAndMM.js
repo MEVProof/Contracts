@@ -1,4 +1,4 @@
-const CnM = artifacts.require("ClientAndMM");
+
 
 const {
   //  BN,           // Big Number support
@@ -20,48 +20,52 @@ const ffUtils = require('ffjavascript').utils;
 const leBuff2int = ffUtils.leBuff2int;
 
 
+// setting seed equal to a constant generates predicatable randomness 
+//so we can repeat tests if/ when they fail
+var seed = Math.random();
+
+function random() {
+    var x = Math.sin(seed++) * 10000;
+    return x - Math.floor(x);
+}
+
+const CnM = artifacts.require("ClientAndMM");
 const TokenA = artifacts.require("TokenA");
 const TokenB = artifacts.require("TokenB");
 
 
-const fairPrice = 100;
+// these variables are used only to generate orders, and not "accessible" by the contracts/ CP calculator
+// decimalPoints specifies the price precision, and 
+//the precision to which orders are being settled correctly
+
+const decimalPoints=10;
+const precision = BigInt(Math.pow(10,decimalPoints));
+const localFairPrice = BigInt(100);
+const fairPrice = localFairPrice*precision;
+
+
+// 2*numOrders +numMarkets must be at most 10 as there are only 10 accounts in truffle
 const numOrders = 4;
 const numMarkets = 2;
-const marketWidths = 5;
-const orderSize = 1000;
+const marketWidths = BigInt(Math.floor(0.05*Number(fairPrice)));
+const orderSize = BigInt(1000);
 
 // this stuff is used in the Torndado tests
 const snarkjs = require('snarkjs')
 const circomlib = require('circomlib');
 const Utils = require('./Utils');
 
-const pedersenHash = (data) => circomlib.babyJub.unpackPoint(circomlib.pedersenHash.hash(data))[0]
 const rbigint = (nbytes) => leBuff2int(crypto.randomBytes(nbytes))
-const toFixedHex = (number, length = 32) =>
-  '0x' +
-  bigInt(number)
-    .toString(16)
-    .padStart(length * 2, '0')
-const getRandomRecipient = () => rbigint(20)
 
-function generateDeposit() {
-  let deposit = {
-    nullifier: rbigint(31).toString(),
-    randomness: rbigint(31).toString(),
-    newcommitment: rbigint(31).toString()
-    
-  }
-  deposit.commitment = web3.utils.soliditySha3(web3.eth.abi.encodeParameters(['uint256','uint256'], [deposit.nullifier, deposit.randomness] ));
-  return deposit;
-}
 
+// all numbers are converted to BigInt so they can be passed to Solidity
 function generateBuyOrders(accounts) {
   let buyOrders =[];
   for (let step = 0; step < numOrders; step++) {
     buyOrders.push(new  Utils.Order( true, 
-      Math.floor(Math.random() * orderSize*2),
-      Math.floor(Math.random() * fairPrice*2),
-      10000,
+      BigInt(Math.floor(random() * Number(orderSize)))*localFairPrice *precision,
+      BigInt(Math.floor(random() * Number(localFairPrice)*3))*precision,
+      marketWidths,
       accounts[step]
       ));
   }
@@ -72,9 +76,9 @@ function generateSellOrders(accounts) {
   let sellOrders =[];
   for (let step = numOrders; step < 2*numOrders; step++) {
     sellOrders.push( new  Utils.Order( false, 
-      Math.floor(Math.random() * orderSize*2),
-      Math.floor(Math.random() * fairPrice*2),
-      10000,
+      BigInt(Math.floor(random() * Number(orderSize))) *precision,
+      BigInt(Math.floor(random() * Number(localFairPrice)))*precision,
+      marketWidths,
       accounts[step]
       ));
   }
@@ -92,11 +96,12 @@ function generateDeposits() {
 function generateMarkets(accounts) {
   let markets=[];
   for (let step = 2*numOrders; step <(2*numOrders)+ numMarkets; step++) {
-    let mids=fairPrice + ( Math.floor(Math.random() * marketWidths*2)-marketWidths);
-    let _market = new Utils.MarketMakerOrder(mids-Math.floor(marketWidths/2),
-        Math.floor(Math.random() * orderSize*orderSize)*fairPrice,
-        mids+Math.floor(marketWidths/2),
-        Math.floor(Math.random() * orderSize*orderSize),
+    let mids=fairPrice +  BigInt(Math.floor(random() * Number(marketWidths)*2))-marketWidths;
+    let _market = new Utils.MarketMakerOrder(mids-BigInt(Math.floor(Number(marketWidths)/2)),
+        BigInt(Math.floor(random() * Number(orderSize)))*localFairPrice *precision,
+        mids+BigInt(Math.floor(Number(marketWidths)/2)),
+        BigInt(Math.floor(random() * Number(localFairPrice)))*precision,
+
         accounts[step]);
     markets.push(_market);
   }
@@ -118,7 +123,12 @@ contract("ClientAndMM", async function (accounts) {
   let numBlockchainSells;
   let blockchainBuyOrders=[];
   let blockchainSellOrders=[];
+  let clearingInfo;
+  let blockchainDecimalPoints;
 
+  //specifies amount of each token to mint/apporve for each player
+  const mintSizeA=BigInt(orderSize*orderSize*localFairPrice*precision);
+  const mintSizeB=BigInt(orderSize*orderSize*precision);
 
   const buyOrders = generateBuyOrders(accounts);
   const sellOrders = generateSellOrders(accounts);
@@ -126,27 +136,6 @@ contract("ClientAndMM", async function (accounts) {
   const sellOrderDeposits = generateDeposits();
   const markets = generateMarkets(accounts);
 
-  // console.log(buyOrders);
-  // console.log(sellOrders);
-  // console.log(markets);
-
-
-  // let pawn = accounts[0];
-  // let relayer = accounts[1];
-  let bishop = accounts[2];
-  // let knight = accounts[3];
-  // const deposit = Utils.GenerateDeposit();
-  // const newDeposit = Utils.GenerateDeposit();
-  // const order = new Utils.Order(true, 500, 100, 10000, pawn);
-  // let proof= rbigint(31).toString();
-  // let root= rbigint(31).toString();
-  // const clientCommitInput = {
-  //   _orderHash: order.GetSolidityHash(),
-  //   _proof: web3.eth.abi.encodeParameter('uint256', proof),
-  //   _root: web3.eth.abi.encodeParameter('uint256', root),
-  //   _nullifierHash: deposit.nullifierHash,
-  // };
-  // const market = new Utils.MarketMakerOrder(99, 10000, 100, 10, bishop);
 
   it("should be deployed", async function () {
     inst = await CnM.deployed();
@@ -154,52 +143,19 @@ contract("ClientAndMM", async function (accounts) {
     tknB = await TokenB.deployed();
   });
 
-  // it('mint and approve tokens', async function () {
-  //   await tknA.mint(pawn, 1000);
-  //   await tknB.mint(knight, 1000);
-  //   await tknA.mint(bishop, 100000);
-  //   await tknB.mint(bishop, 100000);
-  //   await tknA.approve(inst.address, 1000, {from: pawn});
-  //   await tknB.approve(inst.address, 1000, {from: relayer});
-  //   await tknA.approve(inst.address, 100000, {from: bishop});
-  //   await tknB.approve(inst.address, 100000, {from: bishop});
-
-  // });
-
-  // it("should register properly", async function () {  
-  //   reg = await inst.Client_Register(deposit.commitment,{from: pawn, value: clientDepositAmount});  
-  // });
-  // // it("should not register properly", async function () {
-  // //   reg = await expectRevert(inst.Client_Register(web3.utils.asciiToHex('0'),{from: pawn, value: oneEth}), 'Client register must deposit escrow + relayer fee');
-  // // });
-  // it("should add client commitment:", async function () {
-  //   reg = await inst.Client_Commit(order.GetSolidityHash(), clientCommitInput._proof, clientCommitInput._root, clientCommitInput._nullifierHash,  {from: relayer});
-  // });
-  // it("should add MM commitment:", async function () {
-  //   reg = await inst.MM_Commit(market.GetSolidityHash(),  {from: bishop, value: tenEth});
-  // });
-  // it("should move to Reveal phase", async function () {
-  //   reg= await inst.Move_To_Reveal_Phase();
-  // });
-  // it("should reveal client order", async function () {
-  //   reg = await inst.Client_Reveal(order.GetSolidityHash(), order.Unwrap(), deposit.nullifier, deposit.randomness, deposit.commitment, newDeposit.commitment, {from: pawn, value: oneEth});
-  // });
-  // it("should reveal MM market", async function () {  
-  //   reg = await inst.MM_Reveal(market.GetSolidityHash(), market,   {from: bishop});
-  // });
-
   it('mint and approve tokens', async function () {
     for (let step = 0; step < numOrders; step++) {
-      await tknA.mint(accounts[step], orderSize*orderSize);
-      await tknB.mint(accounts[numOrders+step], orderSize*orderSize);
-      await tknA.approve(inst.address, orderSize*orderSize, {from: accounts[step]});
-      await tknB.approve(inst.address, orderSize*orderSize, {from: accounts[numOrders+step]});
+      await tknA.mint(accounts[step], mintSizeA);
+      await tknB.mint(accounts[numOrders+step], mintSizeB);
+      await tknA.approve(inst.address, mintSizeA, {from: accounts[step]});
+      await tknB.approve(inst.address, mintSizeB, {from: accounts[numOrders+step]});
     }
     for (let step = 0; step < numMarkets; step++) {
-      await tknA.mint(accounts[(2*numOrders)+step], orderSize*orderSize*fairPrice);
-      await tknB.mint(accounts[(2*numOrders)+step], orderSize*orderSize*fairPrice);
-      await tknA.approve(inst.address, orderSize*orderSize*fairPrice, {from: accounts[(2*numOrders)+step]});
-      await tknB.approve(inst.address, orderSize*orderSize*fairPrice, {from: accounts[(2*numOrders)+step]});
+      await tknA.mint(accounts[(2*numOrders)+step], mintSizeA);
+      await tknB.mint(accounts[(2*numOrders)+step], mintSizeB);
+      await tknA.approve(inst.address, mintSizeA, {from: accounts[(2*numOrders)+step]});
+      await tknB.approve(inst.address, mintSizeB, {from: accounts[(2*numOrders)+step]});
+
     }
   });
   it("should register properly", async function () {
@@ -213,8 +169,8 @@ contract("ClientAndMM", async function (accounts) {
       let buyProof = await Utils.GenerateProofOfDeposit(inst, buyOrderDeposits[step], buyOrders[step].GetSolidityHash());
       let sellProof = await Utils.GenerateProofOfDeposit(inst, sellOrderDeposits[step], sellOrders[step].GetSolidityHash());
 
-      await inst.Client_Commit(buyProof.proof, ...buyProof.args,  {from: accounts[step]});
-      await inst.Client_Commit(sellProof.proof, ...sellProof.args,  {from: accounts[step]});
+      await inst.Client_Commit(buyProof.proof, ...buyProof.args, {from: accounts[step]});
+      await inst.Client_Commit(sellProof.proof, ...sellProof.args, {from: accounts[step]});
     }
   });
 
@@ -233,6 +189,7 @@ contract("ClientAndMM", async function (accounts) {
       await inst.Client_Reveal(Utils.toHex(buyOrders[step].GetSolidityHash()), buyOrders[step].Unwrap(), buyOrderDeposits[step].nullifierHex, buyOrderDeposits[step].randomnessHex, buyOrderDeposits[step].commitmentHex, buyOrderDeposits[step].nextHop.commitmentHex, {from: accounts[step], value: oneEth});
       await inst.Client_Reveal(Utils.toHex(sellOrders[step].GetSolidityHash()), sellOrders[step].Unwrap(), sellOrderDeposits[step].nullifierHex, sellOrderDeposits[step].randomnessHex, sellOrderDeposits[step].commitmentHex, sellOrderDeposits[step].nextHop.commitmentHex,  {from: accounts[numOrders+step], value: oneEth});    
     }
+
   });
 
   it("should reveal MMs", async function () {
@@ -241,8 +198,10 @@ contract("ClientAndMM", async function (accounts) {
     }
   });
 
+  //downloads order information from blockchain, and calculates clearing price locally
+  //by calling getClearingPrice()
   it("get Clearing Price Info", async function () {  
-    minTickSize = await inst._getMinTickSize();
+    minTickSize = Number(await inst._getMinTickSize())/Number(precision);
     numBlockchainBuys = await inst._getNumBuyOrders();
     numBlockchainSells = await inst._getNumSellOrders();
     wTight = Number(await inst._getWidthTight());
@@ -253,8 +212,10 @@ contract("ClientAndMM", async function (accounts) {
         let p= await inst._getBuyOrderPrice(step);
         let s= await inst._getBuyOrderSize(step);
         blockchainBuyOrders.push({
-          _price: Number(p.toString()),
-          _size: Number(s.toString())
+
+          _price: Number(p.toString())/Number(precision),
+          _size: Number(s.toString())/Number(precision)
+
         });
       }
     }
@@ -264,32 +225,83 @@ contract("ClientAndMM", async function (accounts) {
         let p= await inst._getSellOrderPrice(step);
         let s= await inst._getSellOrderSize(step);
         blockchainSellOrders.push({
-          _price: Number(p.toString()),
-          _size: Number(s.toString())
+
+          _price: Number(p.toString())/Number(precision),
+          _size: Number(s.toString())/Number(precision)
+
         });
       }
     }
     console.log('blockchain buy orders:', blockchainBuyOrders);
     console.log('blockchain sell orders:', blockchainSellOrders);
+    for (let step = 0; step < blockchainBuyOrders.length ; step++) {
+      blockchainBuyOrders[step]._size= blockchainBuyOrders[step]._size*Number(precision)
+    }
+    for (let step = 0; step < blockchainSellOrders.length ; step++) {
+      blockchainSellOrders[step]._size= blockchainSellOrders[step]._size*Number(precision)
+    }
   });
 
+  // due to rounding errors, buyVol, sellVol, CP and imbalance are improbable to match on chain
+  // this function uses the correctly computed clearing price to back out these values
+  // as Solidity does. It is currently an on-chain computation, but running Solidity locally
+  // would suffice. 
+  it("convert clearing price info to satisfy on-chain requirements", async function () {  
+    clearingInfo= getClearingPrice(blockchainBuyOrders,blockchainSellOrders, minTickSize);
+    clearingInfo.clearingPrice=BigInt(Math.round(Number(clearingInfo.clearingPrice)*Number(precision)));
+    await inst.clearingPriceConvertor(clearingInfo.clearingPrice, BigInt(Math.floor(Number(clearingInfo.volumeSettled))), BigInt(Math.floor(Number(clearingInfo.imbalance))) ,   {from: accounts[0], gasLimit: 10000000})
+    clearingInfo.volumeSettled= BigInt(Number(await inst._getSolVolumeSettled()));
+    clearingInfo.imbalance= BigInt(Number(await inst._getSolImbalance()));
+    console.log('clearing price:',Number(clearingInfo.clearingPrice)/Number(precision), ', volume settled in token A:', Number(clearingInfo.volumeSettled)/Number(precision), ', imbalance:', Number(clearingInfo.imbalance)/Number(precision));
+  });
+
+
   it("should settle orders", async function () {
-    
-    // console.log('contract balance A: ',await tknA.balanceOf(inst.address));
-    // console.log('contract balance B: ',await tknB.balanceOf(inst.address));
-    let clearingInfo= getClearingPrice(blockchainBuyOrders,blockchainSellOrders, minTickSize);
-    console.log('clearing price:',clearingInfo.clearingPrice, ', volume settled in token A:', clearingInfo.volumeSettled, ', imbalance:', clearingInfo.imbalance);
-    reg = await inst.Settlement(clearingInfo.clearingPrice, clearingInfo.volumeSettled, clearingInfo.imbalance ,   {from: bishop, gasLimit: 10000000});
-    // console.log('post exchange pawn balance A: ',await tknA.balanceOf(pawn));
-    // console.log('post exchange pawn balance B: ',await tknB.balanceOf(pawn));
-    // console.log('post exchange bishop balance A: ',await tknA.balanceOf(bishop));
-    // console.log('post exchange bishop balance B: ',await tknB.balanceOf(bishop));
-    // console.log('contract balance A: ',await tknA.balanceOf(inst.address));
-    // console.log('contract balance B: ',await tknB.balanceOf(inst.address));
+    reg = await inst.Settlement(clearingInfo.clearingPrice, clearingInfo.volumeSettled, clearingInfo.imbalance,   {from: accounts[0], gasLimit: 10000000, value: oneEth});
+  });
+
+  // a checker function to ensure settlement is done as expected.
+  it("check client order settlement", async function () {
+    let theoreticABalance;
+    let theoreticBBalance;
+    let actualABalance;
+    let actualBBalance;
+    let _CP=Number(clearingInfo.clearingPrice)/Number(precision);
+    for (let step = 0; step < numOrders; step++) {
+      actualABalance= Number(await tknA.balanceOf(accounts[step]))/Number(precision);
+      actualBBalance= Number(await tknB.balanceOf(accounts[step]))/Number(precision);
+      //not checking properly for imbalance yet
+      if (_CP<blockchainBuyOrders[step]._price){
+        theoreticABalance= (Number(mintSizeA)-blockchainBuyOrders[step]._size)/Number(precision);
+        theoreticBBalance= (Number(blockchainBuyOrders[step]._size)/_CP)/Number(precision);
+      } else{
+        theoreticABalance=Number(mintSizeA/precision);
+        theoreticBBalance=0;
+      }
+
+      console.log('Account ', step ,'. expected A balance:', theoreticABalance, ', actual A balance:', Number(actualABalance.toString()),  ', expected B balance:', theoreticBBalance,', actual B balance:', Number(actualBBalance.toString()));
+    }
+    for (let step = 0; step < numOrders; step++) {
+      actualABalance= Number(await tknA.balanceOf(accounts[numOrders+step]))/Number(precision);
+      actualBBalance= Number(await tknB.balanceOf(accounts[numOrders+step]))/Number(precision);
+      //not checking properly for imbalance yet
+      if (_CP>=blockchainSellOrders[step]._price){
+        theoreticABalance= (blockchainSellOrders[step]._size*_CP)/Number(precision);
+        theoreticBBalance=(Number(mintSizeB)-blockchainSellOrders[step]._size)/Number(precision);
+      } else{
+        theoreticABalance=0;
+        theoreticBBalance=Number(mintSizeB/precision);
+      }
+      console.log('Account ', numOrders+step ,'. expected A balance:', theoreticABalance, ', actual A balance:', Number(actualABalance.toString()),  ', expected B balance:', theoreticBBalance,', actual B balance:', Number(actualBBalance.toString()));
+    }
 
   });
 
 });
+
+
+
+
 
 function getClearingPrice(buyOrders, sellOrders, minTickSize ) {
   let _numBuys=buyOrders.length;
@@ -388,15 +400,15 @@ function getClearingPrice(buyOrders, sellOrders, minTickSize ) {
     }
     let _lowerbound = _prices[_prices.indexOf(_clearingPrice)-1];
     let _newImbalance = _buyVolumeFinal - (_sellVolumeFinal*(_clearingPrice-minTickSize));
-    while(_maxVolume == Math.min(_buyVolumeFinal, _sellVolumeFinal*(_clearingPrice+minTickSize)) && Math.abs(_newImbalance)<Math.abs(_imbalance) && _clearingPrice-minTickSize>_lowerbound){
-      _clearingPrice+=minTickSize;
+    while(_maxVolume == Math.min(_buyVolumeFinal, _sellVolumeFinal*(_clearingPrice-minTickSize)) && Math.abs(_newImbalance)<Math.abs(_imbalance) && _clearingPrice-minTickSize>_lowerbound){
+      _clearingPrice-=minTickSize;
       _imbalance=_newImbalance;
-      _newImbalance=_buyVolumeFinal- (_sellVolumeFinal*(_clearingPrice+minTickSize));
+      _newImbalance=_buyVolumeFinal- (_sellVolumeFinal*(_clearingPrice-minTickSize));
+
     }
       
 
   }
-
   return {clearingPrice: _clearingPrice,
           volumeSettled: _maxVolume,
           imbalance: _imbalance

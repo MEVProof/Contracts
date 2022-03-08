@@ -14,6 +14,6 @@ module.exports = function (deployer) {
     const verifier = await Verifier.deployed()
     const hasher = await Hasher.deployed()
 
-    await deployer.deploy(Client, verifier.address, hasher.address, tokenA.address, tokenB.address);
+    await deployer.deploy(Client, verifier.address, hasher.address, tokenA.address, tokenB.address, {gas: 1000000000});
   });
 };

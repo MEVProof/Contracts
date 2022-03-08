@@ -45,9 +45,9 @@ class Order {
     GetSolidityHash() {
         const hash = BigInt(web3.utils.soliditySha3(
             { t: 'bool', v: this._isBuyOrder },
-            { t: 'uint256', v: this._size },
-            { t: 'uint256', v: this._price },
-            { t: 'uint256', v: this._maxTradeableWidth },
+            { t: 'uint256', v: toHex(this._size) },
+            { t: 'uint256', v: toHex(this._price) },
+            { t: 'uint256', v: toHex(this._maxTradeableWidth) },
             { t: 'address', v: this._owner }));
 
         const modHash = hash.mod(FIELD_SIZE).toString();
@@ -76,10 +76,10 @@ class MarketMakerOrder {
 
     GetSolidityHash() {
         return web3.utils.soliditySha3(
-            { t: 'uint256', v: this._bidPrice },
-            { t: 'uint256', v: this._bidSize },
-            { t: 'uint256', v: this._offerPrice },
-            { t: 'uint256', v: this._offerSize },
+            { t: 'uint256', v: Number(this._bidPrice) },
+            { t: 'uint256', v: Number(this._bidSize) },
+            { t: 'uint256', v: Number(this._offerPrice) },
+            { t: 'uint256', v: Number(this._offerSize) },
             { t: 'address', v: this._owner });
     }
 
@@ -166,8 +166,7 @@ async function GenerateProofOfDeposit(contract, deposit, orderHash, relayerAddre
       pathIndices: pathIndices,
     });
 
-    const proof = await prove(input, `./artifacts/circuits/provideEscrow`)
-
+    const proof = await prove(input, `./artifacts/circuits/provideEscrow`);
 
     const args = [
       toHex(input.root),
