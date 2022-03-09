@@ -180,11 +180,13 @@ contract('ClientAndMM', async function (accounts) {
     wTight = Number(await inst._getWidthTight())
 
     for (let step = 0; step < numBlockchainBuys; step++) {
-      const w = Number(await inst._getBuyOrderWidth(step))
+      const buyOrder = await inst._revealedBuyOrders.call(step);
+
+      const w = Number(buyOrder._maxTradeableWidth)
 
       if (w >= wTight) {
-        const p = await inst._getBuyOrderPrice(step)
-        const s = await inst._getBuyOrderSize(step)
+        const p = buyOrder._price
+        const s = buyOrder._size
 
         blockchainBuyOrders.push({
           _price: Number(p.toString()) / Number(precision),
@@ -194,11 +196,13 @@ contract('ClientAndMM', async function (accounts) {
     }
 
     for (let step = 0; step < numBlockchainSells; step++) {
-      const w = await inst._getSellOrderWidth(step)
+      const sellOrder = await inst._revealedSellOrders.call(step);
+
+      const w = Number(sellOrder._maxTradeableWidth)
 
       if (w >= wTight) {
-        const p = await inst._getSellOrderPrice(step)
-        const s = await inst._getSellOrderSize(step)
+        const p = sellOrder._price
+        const s = sellOrder._size
 
         blockchainSellOrders.push({
           _price: Number(p.toString()) / Number(precision),

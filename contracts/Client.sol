@@ -47,10 +47,10 @@ contract ClientAndMM is MerkleTreeWithHistory {
     mapping(bytes32 => bool) _committedMarkets;
     // track active MM commitments in each auction
 
-    Order[] _revealedBuyOrders;
+    Order[] public _revealedBuyOrders;
     // track buy orders in each auction
 
-    Order[] _revealedSellOrders;
+    Order[] public _revealedSellOrders;
     // track sell orders in each auction
 
     mapping(bytes32 => bool) _blacklistedNullifiers;
@@ -883,30 +883,6 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
     function _getWidthTight() public view returns (uint256) {
         return _wTight;
-    }
-
-    function _getBuyOrderPrice(uint256 index) public view returns (uint256) {
-        return _revealedBuyOrders[index]._price;
-    }
-
-    function _getSellOrderPrice(uint256 index) public view returns (uint256) {
-        return _revealedSellOrders[index]._price;
-    }
-
-    function _getBuyOrderSize(uint256 index) public view returns (uint256) {
-        return _revealedBuyOrders[index]._size;
-    }
-
-    function _getSellOrderSize(uint256 index) public view returns (uint256) {
-        return _revealedSellOrders[index]._size;
-    }
-
-    function _getBuyOrderWidth(uint256 index) public view returns (uint256) {
-        return _revealedBuyOrders[index]._maxTradeableWidth;
-    }
-
-    function _getSellOrderWidth(uint256 index) public view returns (uint256) {
-        return _revealedSellOrders[index]._maxTradeableWidth;
     }
 
     //The proceeding functions should be implemented offline
