@@ -128,10 +128,10 @@ async function GenerateMerklePath (contract, deposit) {
 
   // Validate that our data is correct
   const root = tree.root()
-  // const isValidRoot = await contract.isKnownRoot(toHex(root)).call()
-  // const isSpent = await contract.isSpent(toHex(deposit.nullifierHash)).call()
-  // assert(isValidRoot === true, 'Merkle tree is corrupted')
-  // assert(isSpent === false, 'The note is already spent')
+  const isValidRoot = await contract.isKnownRoot.call(toHex(root))
+  const isSpent = await contract.isSpent.call(toHex(deposit.nullifierHash))
+  assert(isValidRoot === true, 'Merkle tree is corrupted')
+  assert(isSpent === false, 'The note is already spent')
   assert(leafIndex >= 0, 'The deposit is not found in the tree')
 
   // Compute merkle proof of our commitment
