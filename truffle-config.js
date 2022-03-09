@@ -23,6 +23,8 @@
 // const fs = require('fs');
 // const mnemonic = fs.readFileSync(".secret").toString().trim();
 
+require('dotenv').config();
+
 module.exports = {
   /**
    * Networks define how you connect to your ethereum client and let you set the
@@ -79,7 +81,8 @@ module.exports = {
 
     reporter: 'eth-gas-reporter',
     reporterOptions: {
-      excludeContracts: ['Migrations', 'ERC20Mock']
+      excludeContracts: ['Migrations', 'ERC20Mock'],
+      coinmarketcap: process.env.COINMARKETCAP_API_KEY
     }
   },
 

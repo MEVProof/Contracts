@@ -2,3 +2,6 @@ build/
 node_modules/
 bin/
 artifacts/
+
+#ENV files
+.env
