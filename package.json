@@ -1,11 +1,14 @@
 {
   "scripts": {
+    "generate-types": "typechain --target=truffle-v5 'build/contracts/*.json'",
     "build:circuit": "./scripts/buildCircuit.sh",
     "build:contract": "npx truffle compile",
-    "build": "npm run build:circuit && npm run build:contract",
+    "build": "yarn build:circuit && yarn build:contract",
     "migrate:dev": "npx truffle migrate --network development --reset",
+    "postinstall": "yarn build && yarn generate-types",
     "test": "npx truffle test",
-    "ganache": "npx ganache-cli --miner.blockGasLimit 1000000000000000 --miner.callGasLimit 1000000000 --chain.allowUnlimitedContractSize true"
+    "ganache": "npx ganache-cli --miner.blockGasLimit 1000000000000000 --miner.callGasLimit 1000000000 --chain.allowUnlimitedContractSize true",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@openzeppelin/contracts": "^4.4.2",
@@ -15,6 +18,12 @@
     "truffle": "^5.4.24"
   },
   "dependencies": {
+    "@typechain/truffle-v5": "^7.0.0",
+    "@types/bn.js": "^5.1.0",
+    "@types/chai": "^4.3.0",
+    "@types/mocha": "^9.1.0",
+    "@types/node": "^17.0.21",
+    "@types/web3": "^1.2.2",
     "circom": "^0.5.45",
     "circom_runtime": "^0.1.13",
     "circomlib": "git+https://github.com/tornadocash/circomlib.git#d20d53411d1bef61f38c99a8b36d5d0cc4836aa1",
@@ -22,6 +31,9 @@
     "eslint": "^8.10.0",
     "ffjavascript": "^0.2.36",
     "fixed-merkle-tree": "^0.6.0",
-    "snarkjs": "git+https://github.com/tornadocash/snarkjs.git#f37f146948f3b28086493e71512006b030588fc2"
+    "snarkjs": "git+https://github.com/tornadocash/snarkjs.git#f37f146948f3b28086493e71512006b030588fc2",
+    "ts-node": "^10.7.0",
+    "typechain": "^7.0.1",
+    "typescript": "^4.6.2"
   }
 }
