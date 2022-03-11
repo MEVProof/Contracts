@@ -1,18 +1,19 @@
-const { groth16 } = require('snarkjs')
-const { utils } = require('ffjavascript')
+import { groth16 } from 'snarkjs'
+import { utils } from 'ffjavascript'
 
 /** BigNumber to hex string of specified length */
-function toHex (number, length = 32) {
+function toHex (number: string | number | bigint | boolean | Buffer, length = 32): string {
   const str = number instanceof Buffer ? number.toString('hex') : BigInt(number).toString(16)
   return '0x' + str.padStart(length * 2, '0')
 }
 
-async function prove (input, keyBasePath) {
+async function prove (input : any, keyBasePath : string): Promise<string> {
   const { proof } = await groth16.fullProve(
     utils.stringifyBigInts(input),
     `${keyBasePath}.wasm`,
     `${keyBasePath}.zkey`
   )
+
   return (
     '0x' +
     toHex(proof.pi_a[0]).slice(2) +
