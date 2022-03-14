@@ -2,10 +2,11 @@ import { ClientAndMMInstance } from "../types/truffle-contracts"
 import BN from 'bn.js'
 import circomlib from 'circomlib'
 import merkleTree from 'fixed-merkle-tree'
+import { endianness } from "os"
 
 const { leBuff2int, leInt2Buff, stringifyBigInts } = require('ffjavascript').utils
 
-const { randomBytes} = require('crypto')
+import { randomBytes } from 'crypto'
 
 const { prove } = require('./prover')
 
@@ -23,8 +24,25 @@ function poseidonHash2(a: any, b: any) {
   return poseidonHash([a, b])
 }
 
+// function stringifyBigIntsOrBNs(o: any) : any {
+//   if ((typeof(o) == "bigint") || (typeof(o) == 'BN') || o.eq !== undefined)  {
+//       return o.toString(10);
+//   } else if (Array.isArray(o)) {
+//       return o.map(stringifyBigIntsOrBNs);
+//   } else if (typeof o == "object") {
+//       const res : any = {};
+//       const keys = Object.keys(o);
+//       keys.forEach( (k) => {
+//           res[k] = stringifyBigIntsOrBNs(o[k]);
+//       });
+//       return res;
+//   } else {
+//       return o;
+//   }
+// }
+
 /** Generate random number of specified byte length */
-const rBN = (nbytes : number) => leBuff2int(randomBytes(nbytes))
+const rBN = (nbytes : number) => new BN(randomBytes(nbytes), "le")
 
 /** Compute pedersen hash */
 const pedersenHash = (data: any) => circomlib.babyJub.unpackPoint(circomlib.pedersenHash.hash(data))[0]
@@ -33,6 +51,10 @@ const pedersenHash = (data: any) => circomlib.babyJub.unpackPoint(circomlib.pede
 export function toHex (number: any, length = 32) : string {
   const str = number instanceof Buffer ? number.toString('hex') : new BN(number).toString(16)
   return '0x' + str.padStart(length * 2, '0')
+}
+
+function BigIntToBN(input : BigInt) : BN {
+  return new BN(input.toString(16), 16);
 }
 
 export class Order  {
@@ -118,6 +140,8 @@ export class Deposit {
   nullifierHash: BN
   nullifierHashHex: string
   nextHop: Deposit | null
+  bnHash: any
+  bnHashMod: bigint
   
   constructor (nullifier: BN, randomness: BN, nextHop : Deposit | null = null) {
     this.nullifier = nullifier
@@ -126,12 +150,15 @@ export class Deposit {
     this.nullifierHex = toHex(nullifier)
     this.randomnessHex = toHex(randomness)
 
-    this.preimage = Buffer.concat([leInt2Buff(this.nullifier, 31), leInt2Buff(this.randomness, 31)])
+    this.preimage = Buffer.concat([this.nullifier.toBuffer('le', 31), this.randomness.toBuffer('le', 31)])
 
-    this.commitment = new BN(toHex(pedersenHash(this.preimage)), 16).mod(FIELD_SIZE)
+    this.commitment = BigIntToBN(pedersenHash(this.preimage)).mod(FIELD_SIZE)
     this.commitmentHex = toHex(this.commitment)
 
-    this.nullifierHash = new BN(toHex(pedersenHash(this.nullifier.toBuffer('le', 31))), 16).mod(FIELD_SIZE)
+    this.bnHash = pedersenHash(this.nullifier.toBuffer('le', 31));
+    this.bnHashMod = this.bnHash % BigInt('21888242871839275222246405745257275088548364400416034343698204186575808495617');
+
+    this.nullifierHash = BigIntToBN(this.bnHashMod)
     this.nullifierHashHex = toHex(this.nullifierHash)
 
     this.nextHop = nextHop
@@ -188,7 +215,7 @@ export async function GenerateProofOfDeposit (contract: ClientAndMMInstance, dep
 
     // Private snark inputs
     nullifier: deposit.nullifierHex,
-    secret: deposit.randomness,
+    secret: deposit.randomnessHex,
     pathElements: pathElements,
     pathIndices: pathIndices
   })

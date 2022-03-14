@@ -6,7 +6,7 @@
     "build": "yarn build:circuit && yarn build:contract",
     "migrate:dev": "npx truffle migrate --network development --reset",
     "postinstall": "yarn build && yarn generate-types",
-    "test": "npx truffle test",
+    "test": "npx truffle test --show-events",
     "ganache": "npx ganache-cli --miner.blockGasLimit 1000000000000000 --miner.callGasLimit 1000000000 --chain.allowUnlimitedContractSize true",
     "typecheck": "tsc --noEmit"
   },

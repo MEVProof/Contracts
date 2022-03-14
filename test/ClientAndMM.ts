@@ -126,6 +126,10 @@ contract('ClientAndMM', async function (accounts) {
   const markets = generateMarkets(accounts)
 
   it('should be deployed', async function () {
+
+    // let dep2 = new Deposit(new BN('347772766944456609595462652943381358370428882929125393768635904846074729881'), new BN('54151491953919259039613378184998532666524616412577698393763023798519349167'))
+    // console.log(dep2)
+
     inst = await CnM.deployed()
     tknA = await TokenA.deployed()
     tknB = await TokenB.deployed()

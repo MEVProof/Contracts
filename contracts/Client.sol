@@ -200,6 +200,16 @@ contract ClientAndMM is MerkleTreeWithHistory {
         return true;
     }
 
+    event CommitCalled(        
+        bytes _proof,
+        bytes32 _root,
+        bytes32 _nullifierHash,
+        bytes32 _orderHash,
+        address payable _relayer,
+        uint256 _fee,
+        uint256 _refund
+    );
+
     event OrderCommited(bytes32 hashed);
 
     function Client_Commit(
@@ -222,6 +232,10 @@ contract ClientAndMM is MerkleTreeWithHistory {
         require(_phase == Phase.Commit, "Phase should be Commit");
         require(isKnownRoot(_root), "Cannot find your merkle root");
         // Make sure to use a recent one
+
+        emit CommitCalled(_proof, _root, _nullifierHash, _orderHash, _relayer, _fee, _refund);
+
+        return true;
 
         require(
             _verifier.verifyProof(
