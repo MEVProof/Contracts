@@ -5,7 +5,7 @@
     "build": "npm run build:circuit && npm run build:contract",
     "migrate:dev": "npx truffle migrate --network development --reset",
     "test": "npx truffle test",
-    "ganache": "npx ganache-cli --miner.blockGasLimit 1000000000000000 --miner.callGasLimit 1000000000 --chain.allowUnlimitedContractSize true"
+    "ganache": "npx ganache-cli --miner.blockGasLimit 1000000000000000 --miner.callGasLimit 1000000000 --chain.allowUnlimitedContractSize true --wallet.deterministic"
   },
   "devDependencies": {
     "@openzeppelin/contracts": "^4.4.2",

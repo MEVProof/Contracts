@@ -3,10 +3,14 @@ const merkleTree = require('fixed-merkle-tree')
 const ffUtils = require('ffjavascript').utils
 const leBuff2int = ffUtils.leBuff2int
 const stringifyBigInts = ffUtils.stringifyBigInts
+const crypto = require('crypto')
+const web3 = require('web3')
 
 const { prove } = require('./prover')
 
 const { poseidon } = require('circomlib')
+
+const { assert } = require('chai')
 
 const FIELD_SIZE = BigInt(
   '21888242871839275222246405745257275088548364400416034343698204186575808495617'
@@ -128,8 +132,8 @@ async function GenerateMerklePath (contract, deposit) {
 
   // Validate that our data is correct
   const root = tree.root()
-  const isValidRoot = await contract.isKnownRoot.call(toHex(root))
-  const isSpent = await contract.isSpent.call(toHex(deposit.nullifierHash))
+  const isValidRoot = await contract.methods.isKnownRoot(toHex(root)).call()
+  const isSpent = await contract.methods.isSpent(toHex(deposit.nullifierHash)).call()
   assert(isValidRoot === true, 'Merkle tree is corrupted')
   assert(isSpent === false, 'The note is already spent')
   assert(leafIndex >= 0, 'The deposit is not found in the tree')
