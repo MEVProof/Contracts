@@ -42,6 +42,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
     mapping(bytes32 => bool) _registrations;
 
     mapping(bytes32 => bool) _committedOrders;
+    uint256 public _committedOrderCount;
     // track active order commitments in each auction
 
     mapping(bytes32 => bool) _committedMarkets;
@@ -60,7 +61,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
     uint256 _tokenAFairValue;
     uint256 _settlementBounty;
 
-    Phase _phase;
+    Phase public _phase;
 
     uint256 constant _phaseLength = 100;
     uint256 _lastPhaseUpdate = 0;
@@ -247,6 +248,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         // record order commitment
         _committedOrders[_orderHash] = true;
+        _committedOrderCount++;
 
         // pay relayer
         _processClientCommit(payable(msg.sender));
@@ -297,6 +299,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
         // require(hash(abi.encodePacked(_nullifier, _randomness)) == _regId, "secrets don't match registration ID");
         // this should hash all order information. Ensure abi.encodePacked maps uniquely.
 
+        // TODO: Do we really need to submit the hash?
         require(_committedOrders[_orderHash], "order not committed");
         require(HashOrder(_order) == _orderHash, "order does not match commitment"
         );
@@ -507,7 +510,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
                 "we're in trouble"
             ); // TODO: Fix data types
 
-            //SettleOrders(clearingPrice, buyVolume, sellVolume);
+            SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
         // As the auction is offered at CP, check if next price increment below clears higher volume OR smaller imbalance
         else if (imbalance < 0) {
@@ -540,7 +543,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
                         Abs((int256)(buyVolumeNew) - (int256)(sellVolumeNew)))
             );
 
-            //SettleOrders(clearingPrice, buyVolume, sellVolume);
+            SettleOrders(clearingPrice, buyVolume, sellVolume);
         }
 
         // Return deposit + reward to caller. Currently just returning deposit as contract does not have a balance necessarily

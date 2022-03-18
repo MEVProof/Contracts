@@ -5,6 +5,16 @@
     "version": "0.2.0",
     "configurations": [
         {
+          "name": "Run CLI",
+          "program": "${workspaceFolder}/src/cli.js",
+          "request": "launch",
+          "skipFiles": [
+            "<node_internals>/**"
+          ],
+          "type": "node",
+          "args": ["reveal", "16470408863902049229465882224468210123673610995747018366953040538545370791806"]
+        },
+        {
             "name": "truffle test",
             "type": "node",
             "request": "launch",

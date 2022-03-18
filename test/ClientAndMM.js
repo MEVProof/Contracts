@@ -140,8 +140,8 @@ contract('ClientAndMM', async function (accounts) {
 
   it('should add client commitments', async function () {
     for (let step = 0; step < numOrders; step++) {
-      const buyProof = await Utils.GenerateProofOfDeposit(inst, buyOrderDeposits[step], buyOrders[step].GetSolidityHash())
-      const sellProof = await Utils.GenerateProofOfDeposit(inst, sellOrderDeposits[step], sellOrders[step].GetSolidityHash())
+      const buyProof = await Utils.GenerateProofOfDeposit(inst.contract, buyOrderDeposits[step], buyOrders[step].GetSolidityHash())
+      const sellProof = await Utils.GenerateProofOfDeposit(inst.contract, sellOrderDeposits[step], sellOrders[step].GetSolidityHash())
 
       await inst.Client_Commit(buyProof.proof, ...buyProof.args, { from: accounts[step] })
       await inst.Client_Commit(sellProof.proof, ...sellProof.args, { from: accounts[step] })
