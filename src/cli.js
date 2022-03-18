@@ -1,50 +1,30 @@
+const commander = require('commander');
+const program = new commander.Command();
+
 const utils = require(__dirname + '/../test/Utils.js')
 const Web3 = require('web3')
 const { toWei, fromWei, toBN, BN } = require('web3-utils')
+const fs = require('fs');
+
 
 let netId = ""
-let unspentDeposits = []
-let committedOrders = []
 
-let web3, exchange, account, token_a, token_b
+let web3, exchange, account, token_a, token_b, state
 
 const rpc = 'http://localhost:8545'
 const clientDepositAmount = 2
 
-const config = {
-    'accounts': [
-        '0x4F3EDF983AC636A65A842CE7C78D9AA706D3B113BCE9C46F30D7D21715B23B1D',
-        '0x6CBED15C793CE57650B9877CF6FA156FBEF513C4E6134F022A85B1FFDD59B2A1',
-        '0x6370FD033278C143179D81C5526140625662B8DAA446C22EE2D73DB3707E620C',
-        '0x646F1CE2FDAD0E6DEEEB5C7E8E5543BDDE65E86029E2FD9FC169899C440A7913',
-        '0xADD53F9A7E588D003326D1CBF9E4A43C061AADD9BC938C843A79E7B4FD2AD743',
-        '0x395DF67F0C2D2D9FE1AD08D1BC8B6627011959B79C53D7DD6A3536A33AB8A4FD',
-        '0xE485D098507F54E7733A205420DFDDBE58DB035FA577FC294EBD14DB90767A52',
-        '0xA453611D9419D0E56F499079478FD72C37B251A94BFDE4D19872C44CF65386E3',
-        '0x829E924FDF021BA3DBBC4225EDFECE9ACA04B929D6E75613329CA6F1D31C0BB4',
-        '0xB0057716D5917BADAF911B193B12B910811C1497B5BADA8D7711F758981C3773',
-    ]
-}
-
-async function TestSetup() {
-
-    config.accounts.forEach(pk => {
-        account = web3.eth.accounts.privateKeyToAccount(pk)
-    });
-}
-
-async function PrintPoolDetails(){
+async function PrintPoolDetails() {
     console.log('Pool details');
-        console.log({
-        'Token_A' : await token_a.methods.symbol().call(),
-        'Token_B' : await token_b.methods.symbol().call(),
+    console.log({
+        'Token_A': await token_a.methods.symbol().call(),
+        'Token_B': await token_b.methods.symbol().call(),
 
-        'Phase' : await exchange.methods._phase().call(),
-        'CommittedOrders' : await exchange.methods._committedOrderCount().call(),
+        'Phase': await exchange.methods._phase().call(),
+        'CommittedOrders': await exchange.methods._committedOrderCount().call(),
 
-        'NumRevealedBuyOrders' : await exchange.methods._getNumBuyOrders().call(),
-        'NumRevealedSellOrders' : await exchange.methods._getNumSellOrders().call(),
-
+        'NumRevealedBuyOrders': await exchange.methods._getNumBuyOrders().call(),
+        'NumRevealedSellOrders': await exchange.methods._getNumSellOrders().call(),
     })
 }
 
@@ -60,14 +40,22 @@ async function AddDeposit() {
 
     await exchange.methods.Client_Register(deposit.commitmentHex).send({ from: account.address, value: clientDepositAmount, gas: 2e6 });
 
-    unspentDeposits.push(deposit);
+    state.unspentDeposits.push(deposit);
 
     console.log('Added deposit of %d to pool %s. Deposit id %s', clientDepositAmount, exchange._address.toString(), deposit.commitmentHex)
 }
 
-async function CommitOrder() {
-    const order = new utils.Order(true, 100, 100000, 1000, account.address);
-    const deposit = unspentDeposits.pop();
+async function CommitOrder(side, price, quantity, maxTradeableWidth, deposit) {
+    const order = new utils.Order(side === "buy", price, quantity, maxTradeableWidth, account.address);
+
+    if (deposit === undefined) {
+        if (state.unspentDeposits.length > 0) {
+            console.log("No deposit provided. Using saved deposit")
+            deposit = state.unspentDeposits.pop();
+        } else {
+            throw new Error("No deposit provided and no saved deposits available")
+        }
+    }
 
     const depositProof = await utils.GenerateProofOfDeposit(exchange, deposit, order.GetSolidityHash())
 
@@ -75,23 +63,38 @@ async function CommitOrder() {
         .Client_Commit(depositProof.proof, ...depositProof.args)
         .send({ from: account.address, gas: 2e6 });
 
-    committedOrders.push({ order: order, deposit: deposit });
+    state.committedOrders.push({ order: order, deposit: deposit });
 
     console.log('Commited to order %s', order.GetSolidityHash())
 }
 
 async function ChangePhase(phase) {
-    if (phase === 'reveal'){
+    if (phase === 'reveal') {
         await exchange.methods.Move_To_Reveal_Phase().send({ from: account.address });
     } else if (phase === 'commit') {
         await exchange.methods.Move_To_Commit_Phase().send({ from: account.address });
+    } else {
+        throw new Error("Unexpected phase: " + phase)
     }
 }
 
-async function RevealOrder() {
-    const { order, deposit } = committedOrders.pop();
+async function RevealOrder(orderHash) {
+    const committedOrders = state.committedOrders.map(order => 
+        { return order === null ? null : { order: utils.OrderFromJSON(order.order), deposit: order.deposit };})
+    
+    if (orderHash === undefined) {
+        throw new Error("No Order Hash provided")
+    }
 
-    const token = !order.isBuy ? token_a : token_b;
+    const matchIndex = committedOrders.findIndex(order => order === null ? false : order.order.GetSolidityHash() === orderHash);
+
+    if (matchIndex === -1) {
+        throw new Error("No commited order matching provided hash found")
+    }
+
+    const {order, deposit} = committedOrders[matchIndex];
+
+    const token = order.isBuy ? token_a : token_b;
 
     await token.methods.mint(account.address, order._size).send({ from: account.address });
     await token.methods.approve(exchange._address, order._size).send({ from: account.address });
@@ -101,6 +104,51 @@ async function RevealOrder() {
         .send({ from: account.address, gas: 2e6 })
 
     console.log('Revealed order %s', order.GetSolidityHash())
+
+    state.committedOrders[matchIndex] = null
+}
+
+async function ShowOrderBook() {
+    const numBlockchainBuys = await exchange.methods._getNumBuyOrders().call()
+    const numBlockchainSells = await exchange.methods._getNumSellOrders().call()
+
+    let buyOrders = []
+    let sellOrders = []
+
+    for (let index = 0; index < numBlockchainBuys; index++) {
+        const element = await exchange.methods._revealedBuyOrders(index).call();
+        buyOrders.push(element);
+    }
+
+    for (let index = 0; index < numBlockchainSells; index++) {
+        const element = await exchange.methods._revealedBuyOrders(index).call();
+        sellOrders.push(element);
+    }
+
+    buyOrders.sort((a, b) => a._price - b._price);
+    sellOrders.sort((a, b) => b._price - a._price);
+
+    console.log("Buy Orders:");
+
+    if (buyOrders.length > 0) {
+        buyOrders.forEach(order => {
+            console.log('\t%d\t%d\t%s', order._price, order._size, order._owner == account.address ? "*" : "");
+        });
+    } else {
+        console.log('==== No Orders ====');
+    }
+
+    console.log();
+
+    console.log("Sell Orders:");
+
+    if (sellOrders.length > 0) {
+        sellOrders.forEach(order => {
+            console.log('\t%d\t%d', order._price, order._size, order._owner == account.address ? "*" : "");
+        });
+    } else {
+        console.log('==== No Orders ====');
+    }
 }
 
 
@@ -117,23 +165,82 @@ async function main() {
 
     account = web3.eth.accounts.privateKeyToAccount('0x' + '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d'.toUpperCase())
 
-    await ChangePhase('commit')
+    state = JSON.parse(fs.readFileSync('state.json', 'utf8'));
 
-    await PrintPoolDetails();
+    if (state.unspentDeposits === undefined) {
+        state.unspentDeposits = []
+    }
 
-    await TestSetup()
+    if (state.committedOrders === undefined) {
+        state.committedOrders = []
+    }
 
-    await AddDeposit()
+    program
+        .name('FairTraDEX CLI')
+        .description('CLI to FairTraDEX DApp')
+        .version('0.1.0');
 
-    await ChangePhase('commit')
+    program
+        .command('pool [pool]')
+        .description('Show pool details')
+        .action(async (pool) => {
+            // TODO: Pool?
+            await PrintPoolDetails();
+        });
 
-    await CommitOrder()
+    program
+        .command('show-book')
+        .description('Show order book.')
+        .action(ShowOrderBook);
 
-    await ChangePhase('reveal')
+    program
+        .command('deposit')
+        .description('Create a new deposit to be used when committing to an order')
+        .action(async () => {
+            await AddDeposit();
+        });
 
-    await RevealOrder()
+    program
+        .command('commit')
+        .description('Commit to an order. Sends irrevokable commititment to trade with all order parameters set.')
+        .addArgument(new commander.Argument('<side>').choices(['buy', 'sell']))
+        .addArgument(new commander.Argument('<price>'))
+        .addArgument(new commander.Argument('<quantity>'))
+        .addArgument(new commander.Argument('[maxTradeableWidth]').default(1000))
+        .addArgument(new commander.Argument('[deposit]', "Deposit to commit order with."))
+        .action(async (side, price, quantity, maxTradeableWidth) => {
+            await CommitOrder(side, price, quantity, maxTradeableWidth);
+        });
 
-    await PrintPoolDetails();
+    program
+        .command('reveal')
+        .description('Reveal a previously commited order. See "commit".')
+        .argument('[commitment]', 'Commited order to reveal')
+        .action(async (commitment) => {
+            await RevealOrder(commitment);
+        })
+
+    program
+        .command('change-phase')
+        .description('Changes state of the auction')
+        .addArgument(new commander.Argument('<phase>', "Phase to change to")
+            .choices(['commit', 'reveal']))
+        .description('Change auction phase')
+        .action(async (phase) => {
+            await ChangePhase(phase);
+        });
+
+    try {
+        await program.parseAsync(process.argv);
+
+        fs.writeFileSync('state.json', JSON.stringify(state, (key, value) =>
+        typeof value === 'bigint'
+            ? value.toString()
+            : value // return everything else unchanged
+        , 2));
+    } catch (e) {
+        console.error(e)
+    }
 
     process.exit(0)
 }

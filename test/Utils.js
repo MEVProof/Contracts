@@ -63,6 +63,10 @@ class Order {
   }
 }
 
+function OrderFromJSON(asJson){
+  return new Order(asJson._isBuyOrder, asJson._size, asJson._price, asJson._maxTradeableWidth, asJson._owner)
+}
+
 class MarketMakerOrder {
   constructor (bidPrice, bidSize, offerPrice, offerSize, owner) {
     this._bidPrice = bidPrice
@@ -185,3 +189,4 @@ exports.GenerateDeposit = GenerateDeposit
 exports.GenerateMerkleProof = GenerateMerklePath
 exports.GenerateProofOfDeposit = GenerateProofOfDeposit
 exports.toHex = toHex
+exports.OrderFromJSON = OrderFromJSON

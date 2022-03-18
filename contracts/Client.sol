@@ -299,6 +299,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
         // require(hash(abi.encodePacked(_nullifier, _randomness)) == _regId, "secrets don't match registration ID");
         // this should hash all order information. Ensure abi.encodePacked maps uniquely.
 
+        // TODO: Do we really need to submit the hash?
         require(_committedOrders[_orderHash], "order not committed");
         require(HashOrder(_order) == _orderHash, "order does not match commitment"
         );
