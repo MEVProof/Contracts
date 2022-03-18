@@ -94,7 +94,7 @@ async function RevealOrder(orderHash) {
 
     const {order, deposit} = committedOrders[matchIndex];
 
-    const token = order.isBuy ? token_a : token_b;
+    const token = order._isBuy ? token_a : token_b;
 
     await token.methods.mint(account.address, order._size).send({ from: account.address });
     await token.methods.approve(exchange._address, order._size).send({ from: account.address });
@@ -121,7 +121,7 @@ async function ShowOrderBook() {
     }
 
     for (let index = 0; index < numBlockchainSells; index++) {
-        const element = await exchange.methods._revealedBuyOrders(index).call();
+        const element = await exchange.methods._revealedSellOrders(index).call();
         sellOrders.push(element);
     }
 
@@ -151,6 +151,25 @@ async function ShowOrderBook() {
     }
 }
 
+function LoadState(pathToState) {
+    let state;
+
+    if (fs.existsSync(pathToState)) {
+        state = JSON.parse(fs.readFileSync(pathToState, 'utf8'));
+    } else {
+        state = {};
+    }
+
+    if (state.unspentDeposits === undefined) {
+        state.unspentDeposits = [];
+    }
+
+    if (state.committedOrders === undefined) {
+        state.committedOrders = [];
+    }
+
+    return state;
+}
 
 async function main() {
     web3 = new Web3(rpc, null, { transactionConfirmationBlocks: 1 })
@@ -165,15 +184,7 @@ async function main() {
 
     account = web3.eth.accounts.privateKeyToAccount('0x' + '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d'.toUpperCase())
 
-    state = JSON.parse(fs.readFileSync('state.json', 'utf8'));
-
-    if (state.unspentDeposits === undefined) {
-        state.unspentDeposits = []
-    }
-
-    if (state.committedOrders === undefined) {
-        state.committedOrders = []
-    }
+    state = LoadState('state.json');
 
     program
         .name('FairTraDEX CLI')
@@ -215,7 +226,7 @@ async function main() {
     program
         .command('reveal')
         .description('Reveal a previously commited order. See "commit".')
-        .argument('[commitment]', 'Commited order to reveal')
+        .argument('<commitment>', 'Hash of commited order to reveal')
         .action(async (commitment) => {
             await RevealOrder(commitment);
         })
