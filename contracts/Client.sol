@@ -331,6 +331,8 @@ contract ClientAndMM is MerkleTreeWithHistory {
                 "re-register must deposit relayer fee"
             );
             _registrations[_newRegId] = true;
+            uint32 insertedIndex = _insert(_newRegId);
+            emit Deposit(_newRegId, insertedIndex, block.timestamp);
         }
         return true;
     }
