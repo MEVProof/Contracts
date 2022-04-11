@@ -96,8 +96,11 @@ async function RevealOrder(orderHash) {
 
     const token = order._isBuy ? token_a : token_b;
 
-    await token.methods.mint(account.address, order._size).send({ from: account.address });
-    await token.methods.approve(exchange._address, order._size).send({ from: account.address });
+    // TODO: Fix this
+    await token_a.methods.approve(exchange._address, order._size).send({ from: account.address });
+    await token_b.methods.approve(exchange._address, order._size).send({ from: account.address });
+
+    console.log('Token transfer approved')
 
     await exchange.methods
         .Client_Reveal(utils.toHex(order.GetSolidityHash()), order.Unwrap(), deposit.nullifierHex, deposit.randomnessHex, deposit.commitmentHex, '0x0')
@@ -149,6 +152,23 @@ async function ShowOrderBook() {
     } else {
         console.log('==== No Orders ====');
     }
+}
+
+async function ShowBalances() {
+    const tokens = [token_a, token_b];
+    for (const token of tokens){
+        const symbol = await token.methods.symbol().call();
+        const balance = await token.methods.balanceOf(account.address).call({ from: account.address });
+
+        console.log(`${symbol}: ${balance}`);
+    }
+}
+
+async function MintTokens(tokenAQuantity, tokenBQuantity) {
+    await token_a.methods.mint(account.address, tokenAQuantity).send({ from: account.address });
+    await token_b.methods.mint(account.address, tokenBQuantity).send({ from: account.address });
+
+    await ShowBalances();
 }
 
 function LoadState(pathToState) {
@@ -203,6 +223,18 @@ async function main() {
         .command('show-book')
         .description('Show order book.')
         .action(ShowOrderBook);
+
+    program
+        .command('check-balances')
+        .description('Check token balances.')
+        .action(ShowBalances);
+
+    program
+        .command('mint-tokens')
+        .description('Test command. Mints tokens to trade with.')
+        .addArgument(new commander.Argument('<tokenAQuantity>'))
+        .addArgument(new commander.Argument('<tokenBQuantity>'))
+        .action(MintTokens)
 
     program
         .command('deposit')
