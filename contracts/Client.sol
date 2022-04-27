@@ -47,6 +47,10 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
     mapping(bytes32 => bool) _committedMarkets;
     // track active MM commitments in each auction
+    
+    bytes32[] public _IDsToBeAdded;
+    uint256 public _currentBatchIDBounty=0;
+    uint256 public deferredDepositFee=1;
 
     Order[] public _revealedBuyOrders;
     // track buy orders in each auction
@@ -195,9 +199,21 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         uint32 insertedIndex = _insert(_regId);
         _registrations[_regId] = true;
-
+	
         emit Deposit(_regId, insertedIndex, block.timestamp);
 
+        return true;
+    }
+    
+    function Client_Register_Deferred(bytes32 _regId) public payable returns (bool) {
+        require(
+            msg.value >= (_escrowClient + _relayerFee + deferredDepositFee),
+            "Client register must deposit escrow + relayer fee"
+        );
+        require(!_registrations[_regId], "Registration ID already taken");
+
+        _IDsToBeAdded.push(_regId);
+	_currentBatchIDBounty+=deferredDepositFee;
         return true;
     }
 
@@ -256,6 +272,18 @@ contract ClientAndMM is MerkleTreeWithHistory {
         emit OrderCommited(_orderHash);
 
         return true;
+    }
+    
+    function Batch_Add_IDs() external payable returns (bool) {
+    	uint32 insertedIndex = _insertXLeaves(_IDsToBeAdded);
+    	for (uint256 i = 0; i < _IDsToBeAdded.length; i++) {
+            _registrations[_IDsToBeAdded[i]] = true;
+            emit Deposit(_IDsToBeAdded[i], insertedIndex+uint32(i), block.timestamp);
+        }
+    	_processBatchingIDsPayout();
+    	delete _IDsToBeAdded;
+	_currentBatchIDBounty=0;
+    	
     }
 
     function MM_Commit(bytes32 _marketHash) external payable {
@@ -327,12 +355,66 @@ contract ClientAndMM is MerkleTreeWithHistory {
             _processClientEscrowReturn();
         } else {
             require(
-                msg.value == _relayerFee,
+                msg.value >= _relayerFee,
                 "re-register must deposit relayer fee"
             );
+            require(!_registrations[_regId], "Registration ID already taken");
             _registrations[_newRegId] = true;
             uint32 insertedIndex = _insert(_newRegId);
             emit Deposit(_newRegId, insertedIndex, block.timestamp);
+        }
+        return true;
+    }
+    
+    function Client_Reveal_Deferred(
+        bytes32 _orderHash,
+        Order memory _order,
+        uint256 _nullifier,
+        uint256 _randomness,
+        bytes32 _regId,
+        bytes32 _newRegId
+    ) external payable returns (bool) {
+        HashOrderTest(_order, _orderHash);
+
+        require(_phase == Phase.Reveal, "Phase should be Reveal");
+        // TODO: See if this is needed. The code below won't work since we're hashing using Pederson in the Tree and not keccak256 - Padraic
+        // require(hash(abi.encodePacked(_nullifier, _randomness)) == _regId, "secrets don't match registration ID");
+        // this should hash all order information. Ensure abi.encodePacked maps uniquely.
+
+        // TODO: Do we really need to submit the hash?
+        require(_committedOrders[_orderHash], "order not committed");
+        require(HashOrder(_order) == _orderHash, "order does not match commitment"
+        );
+
+        require(_registrations[_regId], "The registration doesn't exist");
+
+        // order is a buy order
+        if (_order._isBuyOrder) {
+            // order size should be reduced to reflect the escrow
+
+            _processReveal(_tokenA, _order._size);
+            _revealedBuyOrders.push(_order);
+        } else {
+            // order size should be reduced to reflect the escrow
+            _processReveal(_tokenB, _order._size);
+            _revealedSellOrders.push(_order);
+        }
+
+        // remove order commitment
+        _committedOrders[_orderHash] = false;
+
+        _registrations[_regId] = false;
+
+        if (_newRegId == 0) {
+            _processClientEscrowReturn();
+        } else {
+            require(
+                msg.value >= _relayerFee + deferredDepositFee,
+                "re-register must deposit relayer fee"
+            );
+            require(!_registrations[_regId], "Registration ID already taken");
+            _IDsToBeAdded.push(_regId);
+            _currentBatchIDBounty += deferredDepositFee;
         }
         return true;
     }
@@ -809,6 +891,12 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
     function _processSettlementPayout() internal {
         payable(msg.sender).transfer(_settlementBounty);
+    }
+    
+    // This should be more than _settlementBounty to incentivise settlement
+
+    function _processBatchingIDsPayout() internal {
+        payable(msg.sender).transfer(_currentBatchIDBounty);
     }
 
     // proceeding functions are necessary to perform 'precise' multiplication and division

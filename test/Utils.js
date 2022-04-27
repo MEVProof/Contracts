@@ -133,9 +133,10 @@ async function GenerateMerklePath (contract, deposit) {
   // Find current commitment in the tree
   const depositEvent = events.find(e => e.returnValues.commitment === toHex(deposit.commitment))
   const leafIndex = depositEvent ? depositEvent.returnValues.leafIndex : -1
-
+  console.log('leaves', leaves)
   // Validate that our data is correct
   const root = tree.root()
+  console.log('The computed root', root)
   const isValidRoot = await contract.methods.isKnownRoot(toHex(root)).call()
   const isSpent = await contract.methods.isSpent(toHex(deposit.nullifierHash)).call()
   assert(isValidRoot === true, 'Merkle tree is corrupted')

@@ -54,6 +54,7 @@ contract MerkleTreeWithHistory {
     bytes32 _left,
     bytes32 _right
   ) public view returns (bytes32) {
+
     require(uint256(_left) < FIELD_SIZE, "_left should be inside the field");
     require(uint256(_right) < FIELD_SIZE, "_right should be inside the field");
     bytes32[2] memory input;
@@ -87,6 +88,78 @@ contract MerkleTreeWithHistory {
     currentRootIndex = newRootIndex;
     roots[newRootIndex] = currentLevelHash;
     nextIndex = _nextIndex + 1;
+    return _nextIndex;
+  }
+  
+  function _createSubTree(bytes32[] storage _leaves, uint32 _height) internal returns (bytes32 root) {
+    for (uint32 i = 1; i <= _height; i++) {
+      for (uint32 j = 0; j < uint32(2)**(_height-i); j++) {	
+      	_leaves[j] = hashLeftRight(_leaves[(2*j)], _leaves[(2*j)+1]);
+      }
+    }
+    return _leaves[0];
+  }
+  
+  function _insertXLeaves(bytes32[] storage _leaves) internal returns (uint32 index) {
+    uint32 _nextIndex = nextIndex;
+    uint32 _leavesToInsert = uint32(_leaves.length);
+    
+    // should calculate ceiling of log_2(_leavesToInsert)
+    uint32 _treeToBeInsertedHeight=1;
+    for (uint32 i = 0; i < levels ; i++) {
+    	if (_leavesToInsert>2){
+    	   _treeToBeInsertedHeight+=1;
+    	}
+    	_leavesToInsert /= 2;
+    }
+    
+    // buffer zeroes to create a full sub-tree. Might be sub-optimal
+    for (uint32 i = 0; i < (uint32(2)**_treeToBeInsertedHeight)-_leaves.length; i++) {
+    	_leaves.push(zeros(0));
+    }
+    
+    // insertPosition is the first leaf of the sub-tree to be inserted
+    uint32 _insertPosition=0;
+    for (uint32 i = 1; i <= levels; i++) {
+    	if (uint32(2)**(levels-i)<=_nextIndex){
+    	  nextIndex=nextIndex%(uint32(2)**(levels-i));
+    	  _insertPosition+=uint32(2)**(levels-i);
+    	}
+    }
+    
+    // calculate hash of sub-tree
+    bytes32 currentLevelHash = _createSubTree(_leaves,_treeToBeInsertedHeight);
+   
+    // do the normal insertion
+    _nextIndex = nextIndex;
+    uint32 currentIndex = _nextIndex;
+    bytes32 left;
+    bytes32 right;
+    
+    // this shoooouuuulldd jump straight to the required index of the legacy insertion protocol. 
+    // DOUBLE CHECK THIS
+    currentIndex /= (uint32(2)** _treeToBeInsertedHeight);
+    
+    
+    for (uint32 i = _treeToBeInsertedHeight; i < levels; i++) {
+      if (currentIndex % 2 == 0) {
+        left = currentLevelHash;
+        right = zeros(i);
+        filledSubtrees[i] = currentLevelHash;
+      } else {
+        left = filledSubtrees[i];
+        right = currentLevelHash;
+      }
+      currentLevelHash = hashLeftRight(left, right);
+      currentIndex /= 2;
+    }
+    
+    uint32 newRootIndex = (currentRootIndex + 1) % ROOT_HISTORY_SIZE;
+    currentRootIndex = newRootIndex;
+    roots[newRootIndex] = currentLevelHash;
+    
+    
+    nextIndex = _nextIndex + uint32(2)**_treeToBeInsertedHeight;
     return _nextIndex;
   }
 
