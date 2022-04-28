@@ -81,6 +81,7 @@ module.exports = {
 
     reporter: 'eth-gas-reporter',
     reporterOptions: {
+      currency: 'USD',
       excludeContracts: ['Migrations', 'ERC20Mock'],
       coinmarketcap: process.env.COINMARKETCAP_API_KEY
     }
