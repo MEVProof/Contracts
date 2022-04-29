@@ -112,6 +112,10 @@ async function RevealOrder(orderHash) {
 }
 
 async function ShowOrderBook() {
+    const committedOrders = await exchange.methods._committedOrderCount().call();
+
+    console.log("Commited orders (unrevealed): ", committedOrders, '\n');
+
     const numBlockchainBuys = await exchange.methods._getNumBuyOrders().call()
     const numBlockchainSells = await exchange.methods._getNumSellOrders().call()
 
@@ -169,6 +173,10 @@ async function MintTokens(tokenAQuantity, tokenBQuantity) {
     await token_b.methods.mint(account.address, tokenBQuantity).send({ from: account.address });
 
     await ShowBalances();
+}
+
+async function SettleAuction(price, settledVolume, imbalance) {
+    await exchange.methods.Settlement(price, settledVolume, imbalance).send({from: account.address, value: 1 });
 }
 
 function LoadState(pathToState) {
@@ -272,6 +280,14 @@ async function main() {
         .action(async (phase) => {
             await ChangePhase(phase);
         });
+
+    program
+        .command('settle')
+        .description('Settles the auction at a given price')
+        .argument('<price>', 'Settlement price')
+        .argument('<settledVolume>', 'Volume settled')
+        .argument('<imbalance>', 'Imbalance remaining')
+        .action(SettleAuction);
 
     try {
         await program.parseAsync(process.argv);
