@@ -27,7 +27,7 @@ const fairPrice = localFairPrice * precision
 
 
   // 2*numOrders +numMarkets must be at most the number of accounts. There are only 10 accounts in truffle by default. Running yarn ganache -a X creates X accounts
-  const numOrders = 4
+  const numOrders = 1
   const numMarkets = 2
   const marketWidths = BigInt(Math.floor(0.05 * Number(fairPrice)))
   const orderSize = BigInt(1000)
@@ -135,12 +135,12 @@ contract('ClientAndMM', async function (accounts) {
     }
   })
 
-  //it('should register properly', async function () {
+  // it('should register properly', async function () {
   //  for (let step = 0; step < numOrders; step++) {
   //    await inst.Client_Register(buyOrderDeposits[step].commitmentHex, { from: accounts[step], value: clientDepositAmount })
   //    await inst.Client_Register(sellOrderDeposits[step].commitmentHex, { from: accounts[numOrders + step], value: clientDepositAmount })
   //  }
-  //})
+  // })
   
   it('should defer register properly', async function () {
     for (let step = 0; step < numOrders; step++) {
