@@ -284,7 +284,11 @@ contract ClientAndMM is MerkleTreeWithHistory {
     	_processBatchingIDsPayout();
 
     	delete _IDsToBeAdded;
+<<<<<<< HEAD
 	_currentBatchIDBounty=0;    	
+=======
+	    _currentBatchIDBounty=0;    	
+>>>>>>> 32820a8e76076deca085484c7f78f90bb4f97042
     }
 
     function MM_Commit(bytes32 _marketHash) external payable {
