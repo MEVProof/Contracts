@@ -124,11 +124,6 @@ const MERKLE_TREE_HEIGHT = 20
 async function GenerateMerklePath (contract, deposit) {
   // Get all deposit events from smart contract and assemble merkle tree from them
   const events = await contract.getPastEvents('Deposit', { fromBlock: 0, toBlock: 'latest' })
-
-  console.log(events
-    .sort((a, b) => a.returnValues.leafIndex - b.returnValues.leafIndex)
-    .map(e => e.returnValues));
-
   const leaves = events
     .sort((a, b) => a.returnValues.leafIndex - b.returnValues.leafIndex) // Sort events in chronological order
     .map(e => e.returnValues.commitment)
@@ -136,27 +131,11 @@ async function GenerateMerklePath (contract, deposit) {
     .sort((a, b) => a.returnValues.leafIndex - b.returnValues.leafIndex) 
   const tree = new merkleTree(MERKLE_TREE_HEIGHT, leaves, { hashFunction: poseidonHash2 })
 
-  const bulkInsertTree = new merkleTree(MERKLE_TREE_HEIGHT, [], {hashFunction: poseidonHash2 })
-  bulkInsertTree.bulkInsert(leaves);
-
   // Find current commitment in the tree
   const depositEvent = events.find(e => e.returnValues.commitment === toHex(deposit.commitment))
   const leafIndex = depositEvent ? depositEvent.returnValues.leafIndex : -1
   // Validate that our data is correct
   const root = tree.root()
-<<<<<<< HEAD
-=======
-  console.log('The computed root', toHex(root))
-  console.log('The computed root (bulk insert)', toHex(bulkInsertTree.root()))
-
-  console.log('On chain root', await contract.methods.getLastRoot().call())
-
-  console.log('JS Tree serialized', tree.serialize())
-
-  console.log('filledSubtrees', await contract.methods.filledSubtrees(0).call())
-  console.log('nextIndex', await contract.methods.nextIndex().call())
-
->>>>>>> 32820a8e76076deca085484c7f78f90bb4f97042
   const isValidRoot = await contract.methods.isKnownRoot(toHex(root)).call()
   const isSpent = await contract.methods.isSpent(toHex(deposit.nullifierHash)).call()
   assert(isValidRoot === true, 'Merkle tree is corrupted')
