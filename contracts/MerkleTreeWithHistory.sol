@@ -109,9 +109,7 @@ contract MerkleTreeWithHistory {
       uint index = nextIndex;
 
       bytes32 currentLevelHash = _leaves[i];
-      if(nextIndex%2==0){
-    	 filledSubtrees[0]=_leaves[i];
-      }
+
       while (index % 2 == 1) {
         level++;
         index /= 2;
@@ -119,8 +117,13 @@ contract MerkleTreeWithHistory {
         bytes32 left = filledSubtrees[level - 1];
         bytes32 right = currentLevelHash;
 
-        filledSubtrees[level] = hashLeftRight(left, right);
+        currentLevelHash = hashLeftRight(left, right);
+
+        filledSubtrees[level - 1] = currentLevelHash;
       }
+
+      filledSubtrees[level] = currentLevelHash;
+
       nextIndex += 1;
     }
 
