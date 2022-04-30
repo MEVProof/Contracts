@@ -213,7 +213,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
         require(!_registrations[_regId], "Registration ID already taken");
 
         _IDsToBeAdded.push(_regId);
-	_currentBatchIDBounty+=deferredDepositFee;
+	    _currentBatchIDBounty += deferredDepositFee;
         return true;
     }
 
@@ -275,15 +275,16 @@ contract ClientAndMM is MerkleTreeWithHistory {
     }
     
     function Batch_Add_IDs() external payable returns (bool) {
-    	uint32 insertedIndex = _insertXLeaves(_IDsToBeAdded);
+    	uint32 insertedIndex = _bulkInsert(_IDsToBeAdded);
     	for (uint256 i = 0; i < _IDsToBeAdded.length; i++) {
             _registrations[_IDsToBeAdded[i]] = true;
-            emit Deposit(_IDsToBeAdded[i], insertedIndex+uint32(i), block.timestamp);
+            emit Deposit(_IDsToBeAdded[i], insertedIndex + uint32(i), block.timestamp);
         }
+
     	_processBatchingIDsPayout();
+
     	delete _IDsToBeAdded;
-	_currentBatchIDBounty=0;
-    	
+	_currentBatchIDBounty=0;    	
     }
 
     function MM_Commit(bytes32 _marketHash) external payable {
@@ -366,6 +367,8 @@ contract ClientAndMM is MerkleTreeWithHistory {
         return true;
     }
     
+    // TODO: Most of the code in Client_Reveal* above and below is identical. Encapsulate into a shared function.
+
     function Client_Reveal_Deferred(
         bytes32 _orderHash,
         Order memory _order,

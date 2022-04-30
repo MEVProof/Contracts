@@ -5,7 +5,7 @@ chai.use(chaiBn(BN))
 
 // setting seed equal to a constant generates predicatable randomness
 // so we can repeat tests if/ when they fail
-let seed = Math.random()
+let seed = 1
 
 function random () {
   const x = Math.sin(seed++) * 10000
@@ -27,7 +27,7 @@ const fairPrice = localFairPrice * precision
 
 
   // 2*numOrders +numMarkets must be at most the number of accounts. There are only 10 accounts in truffle by default. Running yarn ganache -a X creates X accounts
-  const numOrders = 4
+  const numOrders = 3
   const numMarkets = 2
   const marketWidths = BigInt(Math.floor(0.05 * Number(fairPrice)))
   const orderSize = BigInt(1000)
@@ -134,14 +134,9 @@ contract('ClientAndMM', async function (accounts) {
       await tknB.approve(inst.address, mintSizeB, { from: accounts[(2 * numOrders) + step] })
     }
   })
-
-  //it('should register properly', async function () {
-  //  for (let step = 0; step < numOrders; step++) {
-  //    await inst.Client_Register(buyOrderDeposits[step].commitmentHex, { from: accounts[step], value: clientDepositAmount })
-  //    await inst.Client_Register(sellOrderDeposits[step].commitmentHex, { from: accounts[numOrders + step], value: clientDepositAmount })
-  //  }
-  //})
   
+ 
+
   it('should defer register properly', async function () {
     for (let step = 0; step < numOrders; step++) {
       await inst.Client_Register_Deferred(buyOrderDeposits[step].commitmentHex, { from: accounts[step], value: clientDepositAmount+1})
@@ -151,9 +146,12 @@ contract('ClientAndMM', async function (accounts) {
   
   it('should batch IDs properly', async function () {
     await inst.Batch_Add_IDs({ from: accounts[0]})
-
   })
 
+  
+
+
+  
   it('should add client commitments', async function () {
     for (let step = 0; step < numOrders; step++) {
       const buyProof = await Utils.GenerateProofOfDeposit(inst.contract, buyOrderDeposits[step], buyOrders[step].GetSolidityHash())
@@ -169,6 +167,8 @@ contract('ClientAndMM', async function (accounts) {
       await inst.MM_Commit(markets[step].GetSolidityHash(), { from: accounts[(2 * numOrders) + step], value: tenEth })
     }
   })
+  
+
 
   it('should move to Reveal phase', async function () {
     reg = await inst.Move_To_Reveal_Phase()

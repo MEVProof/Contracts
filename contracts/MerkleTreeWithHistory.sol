@@ -1,3 +1,5 @@
+
+  
 // https://tornado.cash
 /*
  * d888888P                                           dP              a88888b.                   dP
@@ -90,78 +92,69 @@ contract MerkleTreeWithHistory {
     nextIndex = _nextIndex + 1;
     return _nextIndex;
   }
-  
-  function _createSubTree(bytes32[] storage _leaves, uint32 _height) internal returns (bytes32 root) {
-    for (uint32 i = 1; i <= _height; i++) {
-      for (uint32 j = 0; j < uint32(2)**(_height-i); j++) {	
-      	_leaves[j] = hashLeftRight(_leaves[(2*j)], _leaves[(2*j)+1]);
-      }
-    }
-    return _leaves[0];
-  }
-  
-  function _insertXLeaves(bytes32[] storage _leaves) internal returns (uint32 index) {
+
+  function _bulkInsert(bytes32[] storage _leaves) internal returns (uint32 index) {
     uint32 _nextIndex = nextIndex;
-    uint32 _leavesToInsert = uint32(_leaves.length);
-    
-    // should calculate ceiling of log_2(_leavesToInsert)
-    uint32 _treeToBeInsertedHeight=1;
-    for (uint32 i = 0; i < levels ; i++) {
-    	if (_leavesToInsert>2){
-    	   _treeToBeInsertedHeight+=1;
-    	}
-    	_leavesToInsert /= 2;
-    }
-    
-    // buffer zeroes to create a full sub-tree. Might be sub-optimal
-    for (uint32 i = 0; i < (uint32(2)**_treeToBeInsertedHeight)-_leaves.length; i++) {
-    	_leaves.push(zeros(0));
-    }
-    
-    // insertPosition is the first leaf of the sub-tree to be inserted
-    uint32 _insertPosition=0;
-    for (uint32 i = 1; i <= levels; i++) {
-    	if (uint32(2)**(levels-i)<=_nextIndex){
-    	  nextIndex=nextIndex%(uint32(2)**(levels-i));
-    	  _insertPosition+=uint32(2)**(levels-i);
-    	}
-    }
-    
-    // calculate hash of sub-tree
-    bytes32 currentLevelHash = _createSubTree(_leaves,_treeToBeInsertedHeight);
-   
-    // do the normal insertion
-    _nextIndex = nextIndex;
-    uint32 currentIndex = _nextIndex;
-    bytes32 left;
-    bytes32 right;
-    
-    // this shoooouuuulldd jump straight to the required index of the legacy insertion protocol. 
-    // DOUBLE CHECK THIS
-    currentIndex /= (uint32(2)** _treeToBeInsertedHeight);
+
+    require(_leaves.length > 0, "Must insert at least one leaf");
+    require(nextIndex + _leaves.length <= uint32(2)**levels, "Merkle tree is full. No more leaves can be added");
+
+    // First we insert all elements except the last one
+    // updating only full subtree hashes (all layers where inserted element has odd index)
+    // the last element will update the full path to the root making the tree consistent again
     
     
-    for (uint32 i = _treeToBeInsertedHeight; i < levels; i++) {
-      if (currentIndex % 2 == 0) {
-        left = currentLevelHash;
-        right = zeros(i);
-        filledSubtrees[i] = currentLevelHash;
-      } else {
-        left = filledSubtrees[i];
-        right = currentLevelHash;
+    for (uint i = 0; i < _leaves.length - 1; i++) {
+      uint level = 0;
+      uint index = nextIndex;
+
+      bytes32 currentLevelHash = _leaves[i];
+      if(nextIndex%2==0){
+    	 filledSubtrees[0]=_leaves[i];
       }
-      currentLevelHash = hashLeftRight(left, right);
-      currentIndex /= 2;
+      while (index % 2 == 1) {
+        level++;
+        index /= 2;
+
+        bytes32 left = filledSubtrees[level - 1];
+        bytes32 right = currentLevelHash;
+
+        filledSubtrees[level] = hashLeftRight(left, right);
+      }
+      nextIndex += 1;
     }
-    
-    uint32 newRootIndex = (currentRootIndex + 1) % ROOT_HISTORY_SIZE;
-    currentRootIndex = newRootIndex;
-    roots[newRootIndex] = currentLevelHash;
-    
-    
-    nextIndex = _nextIndex + uint32(2)**_treeToBeInsertedHeight;
+
+    _insert(_leaves[_leaves.length - 1]);
+
     return _nextIndex;
   }
+
+
+    // if (!elements.length) {
+    //   return
+    // }
+
+    // if (this._layers[0].length + elements.length > this.capacity) {
+    //   throw new Error('Tree is full')
+    // }
+    // // First we insert all elements except the last one
+    // // updating only full subtree hashes (all layers where inserted element has odd index)
+    // // the last element will update the full path to the root making the tree consistent again
+    // for (let i = 0; i < elements.length - 1; i++) {
+    //   this._layers[0].push(elements[i])
+    //   let level = 0
+    //   let index = this._layers[0].length - 1
+    //   while (index % 2 === 1) {
+    //     level++
+    //     index >>= 1
+    //     this._layers[level][index] = this._hash(
+    //       this._layers[level - 1][index * 2],
+    //       this._layers[level - 1][index * 2 + 1],
+    //     )
+    //   }
+    // }
+    // this.insert(elements[elements.length - 1])
+  
 
   /**
     @dev Whether the root is present in the root history
