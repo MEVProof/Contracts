@@ -123,17 +123,17 @@ const MERKLE_TREE_HEIGHT = 20
 
 async function GenerateMerklePath (contract, deposit) {
   // Get all deposit events from smart contract and assemble merkle tree from them
-  console.log('Getting current state from tornado contract')
   const events = await contract.getPastEvents('Deposit', { fromBlock: 0, toBlock: 'latest' })
   const leaves = events
     .sort((a, b) => a.returnValues.leafIndex - b.returnValues.leafIndex) // Sort events in chronological order
     .map(e => e.returnValues.commitment)
+  const depositEvents = events
+    .sort((a, b) => a.returnValues.leafIndex - b.returnValues.leafIndex) 
   const tree = new merkleTree(MERKLE_TREE_HEIGHT, leaves, { hashFunction: poseidonHash2 })
 
   // Find current commitment in the tree
   const depositEvent = events.find(e => e.returnValues.commitment === toHex(deposit.commitment))
   const leafIndex = depositEvent ? depositEvent.returnValues.leafIndex : -1
-
   // Validate that our data is correct
   const root = tree.root()
   const isValidRoot = await contract.methods.isKnownRoot(toHex(root)).call()
