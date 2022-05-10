@@ -20,20 +20,8 @@ contract ClientAndMM is MerkleTreeWithHistory {
         return bytes32(keccak256(input));
     }
 
-    function HashOrderTest(Order memory _order, bytes32 expectedHash)
-        public
-        returns (bytes32 hashed)
-    {
-        hashed = HashOrder(_order);
-        emit OrderHashed(_order, hashed, expectedHash);
-    }
-
-    // Tornado initialisation variables
-
     IVerifier public immutable _verifier;
 
-    //using SafeERC20 for IERC20;
-    //was IERC20
     IERC20 public _tokenA;
     IERC20 public _tokenB;
 
@@ -165,25 +153,6 @@ contract ClientAndMM is MerkleTreeWithHistory {
         return true;
     }
 
-    // I think this function at the start of every main contract function
-    // Specifically Client_Commit, MM_Commit, Client_Reveal, MM_Reveal and Settlement
-    // Should effectively automated transitioning between phases
-
-    function phase_Manager() internal {
-        if (block.number - _lastPhaseUpdate >= _phaseLength) {
-            _lastPhaseUpdate = block.number;
-            if (_phase == Phase.Commit) {
-                _phase = Phase.Reveal;
-            } else if (_phase == Phase.Reveal) {
-                _phase = Phase.Resolution;
-            } else {
-                _phase = Phase.Commit;
-            }
-        }
-    }
-
-    // should be nonReentrant
-
     event Deposit(
         bytes32 indexed commitment,
         uint32 leafIndex,
@@ -299,7 +268,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
         require(_phase == Phase.Commit, "Phase should be Commit");
         require(msg.value >= _escrowMM, "MM register must deposit escrow");
 
-        // lodge MM escrow
+        // TODO: lodge MM escrow
 
         // record market commitment
         _committedMarkets[_marketHash] = true;
@@ -329,12 +298,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
         bytes32 _regId,
         bytes32 _newRegId
     ) external payable returns (bool) {
-        HashOrderTest(_order, _orderHash);
-
         require(_phase == Phase.Reveal, "Phase should be Reveal");
-        // TODO: See if this is needed. The code below won't work since we're hashing using Pederson in the Tree and not keccak256 - Padraic
-        // require(hash(abi.encodePacked(_nullifier, _randomness)) == _regId, "secrets don't match registration ID");
-        // this should hash all order information. Ensure abi.encodePacked maps uniquely.
 
         // TODO: Do we really need to submit the hash?
         require(_committedOrders[_orderHash], "order not committed");
@@ -387,8 +351,6 @@ contract ClientAndMM is MerkleTreeWithHistory {
         bytes32 _regId,
         bytes32 _newRegId
     ) external payable returns (bool) {
-        HashOrderTest(_order, _orderHash);
-
         require(_phase == Phase.Reveal, "Phase should be Reveal");
         // TODO: See if this is needed. The code below won't work since we're hashing using Pederson in the Tree and not keccak256 - Padraic
         // require(hash(abi.encodePacked(_nullifier, _randomness)) == _regId, "secrets don't match registration ID");
