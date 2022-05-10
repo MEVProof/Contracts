@@ -7,7 +7,7 @@ chai.use(chaiBn(BN))
 // so we can repeat tests if/ when they fail
 let seed = 1
 
-function random () {
+function random() {
   const x = Math.sin(seed++) * 10000
   return x - Math.floor(x)
 }
@@ -26,17 +26,17 @@ const localFairPrice = BigInt(100)
 const fairPrice = localFairPrice * precision
 
 
-  // 2*numOrders +numMarkets must be at most the number of accounts. There are only 10 accounts in truffle by default. Running yarn ganache -a X creates X accounts
-  const numOrders = 3
-  const numMarkets = 2
-  const marketWidths = BigInt(Math.floor(0.05 * Number(fairPrice)))
-  const orderSize = BigInt(1000)
+// 2*numOrders +numMarkets must be at most the number of accounts. There are only 10 accounts in truffle by default. Running yarn ganache -a X creates X accounts
+const numOrders = 3
+const numMarkets = 2
+const marketWidths = BigInt(Math.floor(0.05 * Number(fairPrice)))
+const orderSize = BigInt(1000)
 
 
 const Utils = require('./Utils')
 
 // all numbers are converted to BigInt so they can be passed to Solidity
-function generateBuyOrders (accounts) {
+function generateBuyOrders(accounts) {
   const buyOrders = []
   for (let step = 0; step < numOrders; step++) {
     buyOrders.push(new Utils.Order(true,
@@ -49,7 +49,7 @@ function generateBuyOrders (accounts) {
   return buyOrders
 }
 
-function generateSellOrders (accounts) {
+function generateSellOrders(accounts) {
   const sellOrders = []
   for (let step = numOrders; step < 2 * numOrders; step++) {
     sellOrders.push(new Utils.Order(false,
@@ -62,7 +62,7 @@ function generateSellOrders (accounts) {
   return sellOrders
 }
 
-function generateDeposits () {
+function generateDeposits() {
   const deposits = []
   for (let step = 0; step < numOrders; step++) {
     deposits.push(Utils.GenerateDeposit(withNextHop = true))
@@ -70,7 +70,7 @@ function generateDeposits () {
   return deposits
 }
 
-function generateMarkets (accounts) {
+function generateMarkets(accounts) {
   const markets = []
   for (let step = 2 * numOrders; step < (2 * numOrders) + numMarkets; step++) {
     const mids = fairPrice + BigInt(Math.floor(random() * Number(marketWidths) * 2)) - marketWidths
@@ -91,9 +91,9 @@ contract('ClientAndMM', async function (accounts) {
   const clientDepositAmount = 3
   let inst
   let reg
-  
 
-	
+
+
   let tknA
   let tknB
   let minTickSize
@@ -134,24 +134,24 @@ contract('ClientAndMM', async function (accounts) {
       await tknB.approve(inst.address, mintSizeB, { from: accounts[(2 * numOrders) + step] })
     }
   })
-  
- 
+
+
 
   it('should defer register properly', async function () {
     for (let step = 0; step < numOrders; step++) {
-      await inst.Client_Register_Deferred(buyOrderDeposits[step].commitmentHex, { from: accounts[step], value: clientDepositAmount+1})
-      await inst.Client_Register_Deferred(sellOrderDeposits[step].commitmentHex, { from: accounts[numOrders + step], value: clientDepositAmount+1 })
+      await inst.Client_Register_Deferred(buyOrderDeposits[step].commitmentHex, { from: accounts[step], value: clientDepositAmount + 1 })
+      await inst.Client_Register_Deferred(sellOrderDeposits[step].commitmentHex, { from: accounts[numOrders + step], value: clientDepositAmount + 1 })
     }
   })
-  
+
   it('should batch IDs properly', async function () {
-    await inst.Batch_Add_IDs({ from: accounts[0]})
+    await inst.Batch_Add_IDs({ from: accounts[0] })
   })
 
-  
 
 
-  
+
+
   it('should add client commitments', async function () {
     for (let step = 0; step < numOrders; step++) {
       const buyProof = await Utils.GenerateProofOfDeposit(inst.contract, buyOrderDeposits[step], buyOrders[step].GetSolidityHash())
@@ -167,7 +167,7 @@ contract('ClientAndMM', async function (accounts) {
       await inst.MM_Commit(markets[step].GetSolidityHash(), { from: accounts[(2 * numOrders) + step], value: tenEth })
     }
   })
-  
+
 
 
   it('should move to Reveal phase', async function () {
@@ -292,7 +292,7 @@ contract('ClientAndMM', async function (accounts) {
   })
 })
 
-function getClearingPrice (buyOrders, sellOrders, minTickSize) {
+function getClearingPrice(buyOrders, sellOrders, minTickSize) {
   const _numBuys = buyOrders.length
   const _numSells = sellOrders.length
   let _prices = []

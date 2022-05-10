@@ -26,13 +26,13 @@ const rbigint = nbytes => leBuff2int(crypto.randomBytes(nbytes))
 const pedersenHash = data => circomlib.babyJub.unpackPoint(circomlib.pedersenHash.hash(data))[0]
 
 /** BigNumber to hex string of specified length */
-function toHex (number, length = 32) {
+function toHex(number, length = 32) {
   const str = number instanceof Buffer ? number.toString('hex') : BigInt(number).toString(16)
   return '0x' + str.padStart(length * 2, '0')
 }
 
 class Order {
-  constructor (isBuyOrder, size, price, maxTradeableWidth, account) {
+  constructor(isBuyOrder, size, price, maxTradeableWidth, account) {
     this._isBuyOrder = isBuyOrder
     this._size = size
     this._price = price
@@ -40,7 +40,7 @@ class Order {
     this._owner = account
   }
 
-  GetSolidityHash () {
+  GetSolidityHash() {
     const hash = BigInt(web3.utils.soliditySha3(
       { t: 'bool', v: this._isBuyOrder },
       { t: 'uint256', v: toHex(this._size) },
@@ -52,7 +52,7 @@ class Order {
     return modHash
   }
 
-  Unwrap () {
+  Unwrap() {
     return {
       _isBuyOrder: this._isBuyOrder ? 1 : 0,
       _size: this._size.toString(),
@@ -63,12 +63,12 @@ class Order {
   }
 }
 
-function OrderFromJSON(asJson){
+function OrderFromJSON(asJson) {
   return new Order(asJson._isBuyOrder, asJson._size, asJson._price, asJson._maxTradeableWidth, asJson._owner)
 }
 
 class MarketMakerOrder {
-  constructor (bidPrice, bidSize, offerPrice, offerSize, owner) {
+  constructor(bidPrice, bidSize, offerPrice, offerSize, owner) {
     this._bidPrice = bidPrice
     this._bidSize = bidSize
     this._offerPrice = offerPrice
@@ -76,7 +76,7 @@ class MarketMakerOrder {
     this._owner = owner
   }
 
-  GetSolidityHash () {
+  GetSolidityHash() {
     return web3.utils.soliditySha3(
       { t: 'uint256', v: Number(this._bidPrice) },
       { t: 'uint256', v: Number(this._bidSize) },
@@ -85,7 +85,7 @@ class MarketMakerOrder {
       { t: 'address', v: this._owner })
   }
 
-  Unwrap () {
+  Unwrap() {
     return {
       _bidPrice: this._bidPrice.toString(),
       _bidSize: this._bidSize.toString(),
@@ -96,7 +96,7 @@ class MarketMakerOrder {
   };
 }
 class Deposit {
-  constructor (nullifier, randomness, nextHop = null) {
+  constructor(nullifier, randomness, nextHop = null) {
     this.nullifier = nullifier
     this.randomness = randomness
 
@@ -115,20 +115,20 @@ class Deposit {
   }
 }
 
-function GenerateDeposit (withNextHop = false) {
+function GenerateDeposit(withNextHop = false) {
   return new Deposit(rbigint(31), rbigint(31), withNextHop ? GenerateDeposit() : null)
 }
 
 const MERKLE_TREE_HEIGHT = 20
 
-async function GenerateMerklePath (contract, deposit) {
+async function GenerateMerklePath(contract, deposit) {
   // Get all deposit events from smart contract and assemble merkle tree from them
   const events = await contract.getPastEvents('Deposit', { fromBlock: 0, toBlock: 'latest' })
   const leaves = events
     .sort((a, b) => a.returnValues.leafIndex - b.returnValues.leafIndex) // Sort events in chronological order
     .map(e => e.returnValues.commitment)
   const depositEvents = events
-    .sort((a, b) => a.returnValues.leafIndex - b.returnValues.leafIndex) 
+    .sort((a, b) => a.returnValues.leafIndex - b.returnValues.leafIndex)
   const tree = new merkleTree(MERKLE_TREE_HEIGHT, leaves, { hashFunction: poseidonHash2 })
 
   // Find current commitment in the tree
@@ -147,7 +147,7 @@ async function GenerateMerklePath (contract, deposit) {
   return { pathElements, pathIndices, root: tree.root() }
 }
 
-async function GenerateProofOfDeposit (contract, deposit, orderHash, relayerAddress = 0, fee = 1, refund = 1) {
+async function GenerateProofOfDeposit(contract, deposit, orderHash, relayerAddress = 0, fee = 1, refund = 1) {
   // Compute merkle proof of our commitment
   const { root, pathElements, pathIndices } = await GenerateMerklePath(contract, deposit)
 
