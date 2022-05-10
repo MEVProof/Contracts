@@ -352,9 +352,6 @@ contract ClientAndMM is MerkleTreeWithHistory {
         bytes32 _newRegId
     ) external payable returns (bool) {
         require(_phase == Phase.Reveal, "Phase should be Reveal");
-        // TODO: See if this is needed. The code below won't work since we're hashing using Pederson in the Tree and not keccak256 - Padraic
-        // require(hash(abi.encodePacked(_nullifier, _randomness)) == _regId, "secrets don't match registration ID");
-        // this should hash all order information. Ensure abi.encodePacked maps uniquely.
 
         // TODO: Do we really need to submit the hash?
         require(_committedOrders[_orderHash], "order not committed");
