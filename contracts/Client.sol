@@ -47,10 +47,10 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
     mapping(bytes32 => bool) _committedMarkets;
     // track active MM commitments in each auction
-    
+
     bytes32[] public _IDsToBeAdded;
-    uint256 public _currentBatchIDBounty=0;
-    uint256 public deferredDepositFee=1;
+    uint256 public _currentBatchIDBounty = 0;
+    uint256 public deferredDepositFee = 1;
 
     Order[] public _revealedBuyOrders;
     // track buy orders in each auction
@@ -199,13 +199,17 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         uint32 insertedIndex = _insert(_regId);
         _registrations[_regId] = true;
-	
+
         emit Deposit(_regId, insertedIndex, block.timestamp);
 
         return true;
     }
-    
-    function Client_Register_Deferred(bytes32 _regId) public payable returns (bool) {
+
+    function Client_Register_Deferred(bytes32 _regId)
+        public
+        payable
+        returns (bool)
+    {
         require(
             msg.value >= (_escrowClient + _relayerFee + deferredDepositFee),
             "Client register must deposit escrow + relayer fee"
@@ -213,7 +217,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
         require(!_registrations[_regId], "Registration ID already taken");
 
         _IDsToBeAdded.push(_regId);
-	    _currentBatchIDBounty += deferredDepositFee;
+        _currentBatchIDBounty += deferredDepositFee;
         return true;
     }
 
@@ -273,18 +277,22 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         return true;
     }
-    
+
     function Batch_Add_IDs() external payable returns (bool) {
-    	uint32 insertedIndex = _bulkInsert(_IDsToBeAdded);
-    	for (uint256 i = 0; i < _IDsToBeAdded.length; i++) {
+        uint32 insertedIndex = _bulkInsert(_IDsToBeAdded);
+        for (uint256 i = 0; i < _IDsToBeAdded.length; i++) {
             _registrations[_IDsToBeAdded[i]] = true;
-            emit Deposit(_IDsToBeAdded[i], insertedIndex + uint32(i), block.timestamp);
+            emit Deposit(
+                _IDsToBeAdded[i],
+                insertedIndex + uint32(i),
+                block.timestamp
+            );
         }
 
-    	_processBatchingIDsPayout();
+        _processBatchingIDsPayout();
 
-    	delete _IDsToBeAdded;
-	_currentBatchIDBounty=0;    	
+        delete _IDsToBeAdded;
+        _currentBatchIDBounty = 0;
     }
 
     function MM_Commit(bytes32 _marketHash) external payable {
@@ -299,14 +307,14 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
     function HashOrder(Order memory _order) internal pure returns (bytes32) {
         bytes32 hashed = keccak256(
-                        abi.encodePacked(
-                            _order._isBuyOrder,
-                            _order._size,
-                            _order._price,
-                            _order._maxTradeableWidth,
-                            _order._owner
-                        )
-                    );
+            abi.encodePacked(
+                _order._isBuyOrder,
+                _order._size,
+                _order._price,
+                _order._maxTradeableWidth,
+                _order._owner
+            )
+        );
 
         uint256 modded = uint256(hashed) % FIELD_SIZE;
 
@@ -330,7 +338,9 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         // TODO: Do we really need to submit the hash?
         require(_committedOrders[_orderHash], "order not committed");
-        require(HashOrder(_order) == _orderHash, "order does not match commitment"
+        require(
+            HashOrder(_order) == _orderHash,
+            "order does not match commitment"
         );
 
         require(_registrations[_regId], "The registration doesn't exist");
@@ -366,7 +376,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
         }
         return true;
     }
-    
+
     // TODO: Most of the code in Client_Reveal* above and below is identical. Encapsulate into a shared function.
 
     function Client_Reveal_Deferred(
@@ -386,7 +396,9 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         // TODO: Do we really need to submit the hash?
         require(_committedOrders[_orderHash], "order not committed");
-        require(HashOrder(_order) == _orderHash, "order does not match commitment"
+        require(
+            HashOrder(_order) == _orderHash,
+            "order does not match commitment"
         );
 
         require(_registrations[_regId], "The registration doesn't exist");
@@ -895,7 +907,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
     function _processSettlementPayout() internal {
         payable(msg.sender).transfer(_settlementBounty);
     }
-    
+
     // This should be more than _settlementBounty to incentivise settlement
 
     function _processBatchingIDsPayout() internal {
