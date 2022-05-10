@@ -230,7 +230,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         // TODO: Do we want to allow commiting a new order using the same deposit? Eg amending an
         // order before the end of the commit phase without burning a deposit?
-        // If so we'll need to rework the lines below - Padraic
+        // If so we'll need to rework the lines below
 
         // record nullifier hash
         _nullifierHashes[_nullifierHash] = true;
