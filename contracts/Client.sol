@@ -20,20 +20,8 @@ contract ClientAndMM is MerkleTreeWithHistory {
         return bytes32(keccak256(input));
     }
 
-    function HashOrderTest(Order memory _order, bytes32 expectedHash)
-        public
-        returns (bytes32 hashed)
-    {
-        hashed = HashOrder(_order);
-        emit OrderHashed(_order, hashed, expectedHash);
-    }
-
-    // Tornado initialisation variables
-
     IVerifier public immutable _verifier;
 
-    //using SafeERC20 for IERC20;
-    //was IERC20
     IERC20 public _tokenA;
     IERC20 public _tokenB;
 
@@ -47,10 +35,10 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
     mapping(bytes32 => bool) _committedMarkets;
     // track active MM commitments in each auction
-    
+
     bytes32[] public _IDsToBeAdded;
-    uint256 public _currentBatchIDBounty=0;
-    uint256 public deferredDepositFee=1;
+    uint256 public _currentBatchIDBounty = 0;
+    uint256 public deferredDepositFee = 1;
 
     Order[] public _revealedBuyOrders;
     // track buy orders in each auction
@@ -165,25 +153,6 @@ contract ClientAndMM is MerkleTreeWithHistory {
         return true;
     }
 
-    // I think this function at the start of every main contract function
-    // Specifically Client_Commit, MM_Commit, Client_Reveal, MM_Reveal and Settlement
-    // Should effectively automated transitioning between phases
-
-    function phase_Manager() internal {
-        if (block.number - _lastPhaseUpdate >= _phaseLength) {
-            _lastPhaseUpdate = block.number;
-            if (_phase == Phase.Commit) {
-                _phase = Phase.Reveal;
-            } else if (_phase == Phase.Reveal) {
-                _phase = Phase.Resolution;
-            } else {
-                _phase = Phase.Commit;
-            }
-        }
-    }
-
-    // should be nonReentrant
-
     event Deposit(
         bytes32 indexed commitment,
         uint32 leafIndex,
@@ -199,13 +168,17 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         uint32 insertedIndex = _insert(_regId);
         _registrations[_regId] = true;
-	
+
         emit Deposit(_regId, insertedIndex, block.timestamp);
 
         return true;
     }
-    
-    function Client_Register_Deferred(bytes32 _regId) public payable returns (bool) {
+
+    function Client_Register_Deferred(bytes32 _regId)
+        public
+        payable
+        returns (bool)
+    {
         require(
             msg.value >= (_escrowClient + _relayerFee + deferredDepositFee),
             "Client register must deposit escrow + relayer fee"
@@ -213,7 +186,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
         require(!_registrations[_regId], "Registration ID already taken");
 
         _IDsToBeAdded.push(_regId);
-	    _currentBatchIDBounty += deferredDepositFee;
+        _currentBatchIDBounty += deferredDepositFee;
         return true;
     }
 
@@ -257,7 +230,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         // TODO: Do we want to allow commiting a new order using the same deposit? Eg amending an
         // order before the end of the commit phase without burning a deposit?
-        // If so we'll need to rework the lines below - Padraic
+        // If so we'll need to rework the lines below
 
         // record nullifier hash
         _nullifierHashes[_nullifierHash] = true;
@@ -273,25 +246,29 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         return true;
     }
-    
+
     function Batch_Add_IDs() external payable returns (bool) {
-    	uint32 insertedIndex = _bulkInsert(_IDsToBeAdded);
-    	for (uint256 i = 0; i < _IDsToBeAdded.length; i++) {
+        uint32 insertedIndex = _bulkInsert(_IDsToBeAdded);
+        for (uint256 i = 0; i < _IDsToBeAdded.length; i++) {
             _registrations[_IDsToBeAdded[i]] = true;
-            emit Deposit(_IDsToBeAdded[i], insertedIndex + uint32(i), block.timestamp);
+            emit Deposit(
+                _IDsToBeAdded[i],
+                insertedIndex + uint32(i),
+                block.timestamp
+            );
         }
 
-    	_processBatchingIDsPayout();
+        _processBatchingIDsPayout();
 
-    	delete _IDsToBeAdded;
-	_currentBatchIDBounty=0;    	
+        delete _IDsToBeAdded;
+        _currentBatchIDBounty = 0;
     }
 
     function MM_Commit(bytes32 _marketHash) external payable {
         require(_phase == Phase.Commit, "Phase should be Commit");
         require(msg.value >= _escrowMM, "MM register must deposit escrow");
 
-        // lodge MM escrow
+        // TODO: lodge MM escrow
 
         // record market commitment
         _committedMarkets[_marketHash] = true;
@@ -299,14 +276,14 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
     function HashOrder(Order memory _order) internal pure returns (bytes32) {
         bytes32 hashed = keccak256(
-                        abi.encodePacked(
-                            _order._isBuyOrder,
-                            _order._size,
-                            _order._price,
-                            _order._maxTradeableWidth,
-                            _order._owner
-                        )
-                    );
+            abi.encodePacked(
+                _order._isBuyOrder,
+                _order._size,
+                _order._price,
+                _order._maxTradeableWidth,
+                _order._owner
+            )
+        );
 
         uint256 modded = uint256(hashed) % FIELD_SIZE;
 
@@ -321,16 +298,13 @@ contract ClientAndMM is MerkleTreeWithHistory {
         bytes32 _regId,
         bytes32 _newRegId
     ) external payable returns (bool) {
-        HashOrderTest(_order, _orderHash);
-
         require(_phase == Phase.Reveal, "Phase should be Reveal");
-        // TODO: See if this is needed. The code below won't work since we're hashing using Pederson in the Tree and not keccak256 - Padraic
-        // require(hash(abi.encodePacked(_nullifier, _randomness)) == _regId, "secrets don't match registration ID");
-        // this should hash all order information. Ensure abi.encodePacked maps uniquely.
 
         // TODO: Do we really need to submit the hash?
         require(_committedOrders[_orderHash], "order not committed");
-        require(HashOrder(_order) == _orderHash, "order does not match commitment"
+        require(
+            HashOrder(_order) == _orderHash,
+            "order does not match commitment"
         );
 
         require(_registrations[_regId], "The registration doesn't exist");
@@ -366,7 +340,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
         }
         return true;
     }
-    
+
     // TODO: Most of the code in Client_Reveal* above and below is identical. Encapsulate into a shared function.
 
     function Client_Reveal_Deferred(
@@ -377,16 +351,13 @@ contract ClientAndMM is MerkleTreeWithHistory {
         bytes32 _regId,
         bytes32 _newRegId
     ) external payable returns (bool) {
-        HashOrderTest(_order, _orderHash);
-
         require(_phase == Phase.Reveal, "Phase should be Reveal");
-        // TODO: See if this is needed. The code below won't work since we're hashing using Pederson in the Tree and not keccak256 - Padraic
-        // require(hash(abi.encodePacked(_nullifier, _randomness)) == _regId, "secrets don't match registration ID");
-        // this should hash all order information. Ensure abi.encodePacked maps uniquely.
 
         // TODO: Do we really need to submit the hash?
         require(_committedOrders[_orderHash], "order not committed");
-        require(HashOrder(_order) == _orderHash, "order does not match commitment"
+        require(
+            HashOrder(_order) == _orderHash,
+            "order does not match commitment"
         );
 
         require(_registrations[_regId], "The registration doesn't exist");
@@ -895,7 +866,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
     function _processSettlementPayout() internal {
         payable(msg.sender).transfer(_settlementBounty);
     }
-    
+
     // This should be more than _settlementBounty to incentivise settlement
 
     function _processBatchingIDsPayout() internal {

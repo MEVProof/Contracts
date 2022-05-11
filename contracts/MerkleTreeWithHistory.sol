@@ -93,6 +93,9 @@ contract MerkleTreeWithHistory {
     return _nextIndex;
   }
 
+  /**
+    @dev Insert multiple leaves at once while minimizing the amount of intermediate hashes computed
+   */
   function _bulkInsert(bytes32[] storage _leaves) internal returns (uint32 index) {
     uint32 _nextIndex = nextIndex;
 
@@ -131,33 +134,6 @@ contract MerkleTreeWithHistory {
 
     return _nextIndex;
   }
-
-
-    // if (!elements.length) {
-    //   return
-    // }
-
-    // if (this._layers[0].length + elements.length > this.capacity) {
-    //   throw new Error('Tree is full')
-    // }
-    // // First we insert all elements except the last one
-    // // updating only full subtree hashes (all layers where inserted element has odd index)
-    // // the last element will update the full path to the root making the tree consistent again
-    // for (let i = 0; i < elements.length - 1; i++) {
-    //   this._layers[0].push(elements[i])
-    //   let level = 0
-    //   let index = this._layers[0].length - 1
-    //   while (index % 2 === 1) {
-    //     level++
-    //     index >>= 1
-    //     this._layers[level][index] = this._hash(
-    //       this._layers[level - 1][index * 2],
-    //       this._layers[level - 1][index * 2 + 1],
-    //     )
-    //   }
-    // }
-    // this.insert(elements[elements.length - 1])
-  
 
   /**
     @dev Whether the root is present in the root history
