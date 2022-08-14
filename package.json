@@ -8,7 +8,7 @@
     "ganache": "npx ganache-cli --miner.blockGasLimit 1000000000000000 --miner.callGasLimit 1000000000 --chain.allowUnlimitedContractSize true --wallet.deterministic"
   },
   "devDependencies": {
-    "@openzeppelin/contracts": "^4.4.2",
+    "@openzeppelin/contracts": "^4.7.2",
     "@openzeppelin/test-helpers": "^0.5.15",
     "chai-bn": "^0.3.0",
     "eth-gas-reporter": "^0.2.23",
