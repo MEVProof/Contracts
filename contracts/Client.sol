@@ -42,10 +42,11 @@ contract ClientAndMM is MerkleTreeWithHistory {
     mapping(bytes32 => bool) _registrations;
 
     mapping(bytes32 => bool) _committedOrders;
-    uint256 public _committedOrderCount;
+    uint256 public _unrevealedOrderCount;
     // track active order commitments in each auction
 
     mapping(bytes32 => bool) _committedMarkets;
+    uint256 public _unrevealedMarketCount;
     // track active MM commitments in each auction
     
     bytes32[] public _IDsToBeAdded;
@@ -81,6 +82,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
     uint256 _marketOrderValue = type(uint256).max;
 
     enum Phase {
+        Inactive,
         Commit,
         Reveal,
         Resolution
@@ -144,24 +146,38 @@ contract ClientAndMM is MerkleTreeWithHistory {
         _tokenAFairValue = 1;
 
         // initialise phase as Commit
-        _phase = Phase.Commit;
+        _phase = Phase.Inactive;
+
+        _lastPhaseUpdate = block.number;
     }
 
     // housekeeping functions needed to transition between phases. In reality we want these
     // automated, or incentive compatible.
 
     function Move_To_Commit_Phase() external returns (bool) {
+        
+        require(_phase == Phase.Inactive, "Ongoing Auction");
+        _unrevealedOrderCount =0;
+        _unrevealedMarketCount=0;
         _phase = Phase.Commit;
+        _lastPhaseUpdate = block.number;
         return true;
     }
 
     function Move_To_Reveal_Phase() external returns (bool) {
+        //omit block number checks for tests
+        //require(_phase == Phase.Commit && _lastPhaseUpdate-block.number >= _phaseLength, "Not ready to enter Reveal Phase");
+        require(_phase == Phase.Commit, "Not ready to enter Reveal Phase");
         _phase = Phase.Reveal;
+        _lastPhaseUpdate = block.number;
         return true;
     }
 
     function Move_To_Resolution_Phase() external returns (bool) {
+        
+        require(_phase == Phase.Commit && ( _lastPhaseUpdate-block.number >= _phaseLength || (_unrevealedOrderCount==0 && _unrevealedMarketCount==0)), "Not ready to enter Reveal Phase");
         _phase = Phase.Resolution;
+        _lastPhaseUpdate = block.number;
         return true;
     }
 
@@ -169,18 +185,6 @@ contract ClientAndMM is MerkleTreeWithHistory {
     // Specifically Client_Commit, MM_Commit, Client_Reveal, MM_Reveal and Settlement
     // Should effectively automated transitioning between phases
 
-    function phase_Manager() internal {
-        if (block.number - _lastPhaseUpdate >= _phaseLength) {
-            _lastPhaseUpdate = block.number;
-            if (_phase == Phase.Commit) {
-                _phase = Phase.Reveal;
-            } else if (_phase == Phase.Reveal) {
-                _phase = Phase.Resolution;
-            } else {
-                _phase = Phase.Commit;
-            }
-        }
-    }
 
     // should be nonReentrant
 
@@ -264,7 +268,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         // record order commitment
         _committedOrders[_orderHash] = true;
-        _committedOrderCount++;
+        _unrevealedOrderCount++;
 
         // pay relayer
         _processClientCommit(payable(msg.sender));
@@ -294,6 +298,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
         // lodge MM escrow
 
         // record market commitment
+        _unrevealedMarketCount++;
         _committedMarkets[_marketHash] = true;
     }
 
@@ -349,7 +354,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         // remove order commitment
         _committedOrders[_orderHash] = false;
-
+        _unrevealedOrderCount--;
         _registrations[_regId] = false;
 
         if (_newRegId == 0) {
@@ -369,7 +374,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
     
     // TODO: Most of the code in Client_Reveal* above and below is identical. Encapsulate into a shared function.
 
-    function Client_Reveal_Deferred(
+    function Client_Reveal_w_Deferred_Insert(
         bytes32 _orderHash,
         Order memory _order,
         uint256 _nullifier,
@@ -405,19 +410,30 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         // remove order commitment
         _committedOrders[_orderHash] = false;
-
         _registrations[_regId] = false;
+        _unrevealedOrderCount--;
 
         if (_newRegId == 0) {
             _processClientEscrowReturn();
         } else {
             require(
                 msg.value >= _relayerFee + deferredDepositFee,
-                "re-register must deposit relayer fee"
+                "re-register must deposit relayer fee, and to defer, the defer deposit fee"
             );
             require(!_registrations[_regId], "Registration ID already taken");
             _IDsToBeAdded.push(_regId);
             _currentBatchIDBounty += deferredDepositFee;
+            
+            
+            require(
+            msg.value >= (_escrowClient + _relayerFee + deferredDepositFee),
+            "Client register must deposit escrow + relayer fee"
+        );
+        require(!_registrations[_regId], "Registration ID already taken");
+
+        _IDsToBeAdded.push(_regId);
+	    _currentBatchIDBounty += deferredDepositFee;
+        return true;
         }
         return true;
     }
@@ -447,7 +463,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         _processReveal(_tokenA, _market._bidSize);
         _processReveal(_tokenB, _market._offerSize);
-
+        _unrevealedMarketCount--;
         // add bid as buy Order. In the paper we treat markets differently for the main Thm. This has marginal gains on just adding all orders, and is more complex
 
         Order memory _bid;
@@ -507,6 +523,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
             _revealedSellOrders.length + _revealedBuyOrders.length > 0,
             "No orders"
         );
+        
 
         uint256 revealedBuyOrderCount = _revealedBuyOrders.length;
         uint256 revealedSellOrderCount = _revealedSellOrders.length;
@@ -640,7 +657,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
         // Reaching this part of the contract means order have been settled, so the portoocol can transition to the next Commit phase
 
         _lastPhaseUpdate = block.number;
-        _phase = Phase.Commit;
+        _phase = Phase.Inactive;
 
         return true;
     }

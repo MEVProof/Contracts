@@ -27,7 +27,7 @@ const fairPrice = localFairPrice * precision
 
 
   // 2*numOrders +numMarkets must be at most the number of accounts. There are only 10 accounts in truffle by default. Running yarn ganache -a X creates X accounts
-  const numOrders = 3
+  const numOrders = 4
   const numMarkets = 2
   const marketWidths = BigInt(Math.floor(0.05 * Number(fairPrice)))
   const orderSize = BigInt(1000)
@@ -135,6 +135,9 @@ contract('ClientAndMM', async function (accounts) {
     }
   })
   
+  it('should initialise auction', async function () {
+    await inst.Move_To_Commit_Phase()
+  })
  
 
   it('should defer register properly', async function () {
@@ -175,7 +178,7 @@ contract('ClientAndMM', async function (accounts) {
   })
 
   it('should reveal clients', async function () {
-    for (let step = 0; step < numOrders; step++) {
+   for (let step = 0; step < numOrders; step++) {
       await inst.Client_Reveal(Utils.toHex(buyOrders[step].GetSolidityHash()), buyOrders[step].Unwrap(), buyOrderDeposits[step].nullifierHex, buyOrderDeposits[step].randomnessHex, buyOrderDeposits[step].commitmentHex, buyOrderDeposits[step].nextHop.commitmentHex, { from: accounts[step], value: oneEth })
       await inst.Client_Reveal(Utils.toHex(sellOrders[step].GetSolidityHash()), sellOrders[step].Unwrap(), sellOrderDeposits[step].nullifierHex, sellOrderDeposits[step].randomnessHex, sellOrderDeposits[step].commitmentHex, sellOrderDeposits[step].nextHop.commitmentHex, { from: accounts[numOrders + step], value: oneEth })
     }
