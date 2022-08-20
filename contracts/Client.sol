@@ -40,6 +40,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
     mapping(bytes32 => bool) public _nullifierHashes;
     // we store all commitments just to prevent accidental deposits with the same commitment
     mapping(bytes32 => bool) _registrations;
+    mapping(bytes32 => bool) _registrationDeposits;
 
     mapping(bytes32 => bool) _committedOrders;
     uint256 public _unrevealedOrderCount;
@@ -64,6 +65,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
     uint256 _escrowMM;
     uint256 _relayerFee;
     uint256 _tokenAFairValue;
+    uint256 _tokenBFairValue;
     uint256 _settlementBounty;
 
     Phase public _phase;
@@ -142,9 +144,6 @@ contract ClientAndMM is MerkleTreeWithHistory {
         // reward to be paid to player successfully settling orders.
         _settlementBounty = 1;
 
-        // set tokenA fair value. Needed to compare escrows and order/market deposit amounts
-        _tokenAFairValue = 1;
-
         // initialise phase as Commit
         _phase = Phase.Inactive;
 
@@ -159,6 +158,9 @@ contract ClientAndMM is MerkleTreeWithHistory {
         require(_phase == Phase.Inactive, "Ongoing Auction");
         _unrevealedOrderCount =0;
         _unrevealedMarketCount=0;
+        // set tokenA, tokenB fair value with respect to ETH. Needed to compare escrows and order/market deposit amounts
+        _tokenAFairValue = getTknPrice(_tokenA);
+        _tokenBFairValue = getTknPrice(_tokenB);
         _phase = Phase.Commit;
         _lastPhaseUpdate = block.number;
         return true;
@@ -196,7 +198,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
     function Client_Register(bytes32 _regId) public payable returns (bool) {
         require(
-            msg.value >= (_escrowClient + _relayerFee),
+            msg.value >= (_relayerFee),
             "Client register must deposit escrow + relayer fee"
         );
         require(!_registrations[_regId], "Registration ID already taken");
@@ -211,12 +213,13 @@ contract ClientAndMM is MerkleTreeWithHistory {
     
     function Client_Register_Deferred(bytes32 _regId) public payable returns (bool) {
         require(
-            msg.value >= (_escrowClient + _relayerFee + deferredDepositFee),
+            msg.value >= (_relayerFee + deferredDepositFee),
             "Client register must deposit escrow + relayer fee"
         );
         require(!_registrations[_regId], "Registration ID already taken");
 
         _IDsToBeAdded.push(_regId);
+        
 	    _currentBatchIDBounty += deferredDepositFee;
         return true;
     }
@@ -399,11 +402,14 @@ contract ClientAndMM is MerkleTreeWithHistory {
         // order is a buy order
         if (_order._isBuyOrder) {
             // order size should be reduced to reflect the escrow
+            _order._size=Math.min(_order._size, _escrowClient*_tokenAFairValue);
 
             _processReveal(_tokenA, _order._size);
             _revealedBuyOrders.push(_order);
         } else {
             // order size should be reduced to reflect the escrow
+            _order._size=Math.min(_order._size, _escrowClient*_tokenBFairValue);
+
             _processReveal(_tokenB, _order._size);
             _revealedSellOrders.push(_order);
         }
@@ -461,6 +467,8 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
         require(_committedMarkets[_marketHash], "Market not recorded");
 
+        _market._bidSize=Math.min(_market._bidSize, _escrowMM*_tokenAFairValue);
+        _market._offerSize=Math.min(_market._offerSize, _escrowMM*_tokenBFairValue);
         _processReveal(_tokenA, _market._bidSize);
         _processReveal(_tokenB, _market._offerSize);
         _unrevealedMarketCount--;
@@ -917,6 +925,11 @@ contract ClientAndMM is MerkleTreeWithHistory {
 
     function _processBatchingIDsPayout() internal {
         payable(msg.sender).transfer(_currentBatchIDBounty);
+    }
+
+    function getTknPrice(IERC20 _tkn) internal returns(uint256){
+        // this function should call a price oracle, either internal(e.g based on trade volume, deposits, etc.) or external, (e.g chainlink, uniswap, etc) which upperbounds the price of _tkn in ETH
+        return 1000000000;
     }
 
     // proceeding functions are necessary to perform 'precise' multiplication and division
