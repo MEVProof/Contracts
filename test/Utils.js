@@ -289,7 +289,7 @@ function CalculateClearingPrice(buyOrders, sellOrders, minTickSize) {
   }
 }
 
-async function GetOpenOrders(inst) {
+async function GetOpenOrders(inst, precision) {
   const numBlockchainBuys = await inst._getNumBuyOrders()
   const numBlockchainSells = await inst._getNumSellOrders()
   const wTight = Number(await inst._getWidthTight())

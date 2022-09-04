@@ -26,11 +26,11 @@ const localFairPrice = BigInt(100)
 const fairPrice = localFairPrice * precision
 
 
-  // 2*numOrders +numMarkets must be at most the number of accounts. There are only 10 accounts in truffle by default. Running yarn ganache -a X creates X accounts
-  const numOrders = 4
-  const numMarkets = 2
-  const marketWidths = BigInt(Math.floor(0.05 * Number(fairPrice)))
-  const orderSize = BigInt(1000)
+// 2*numOrders +numMarkets must be at most the number of accounts. There are only 10 accounts in truffle by default. Running yarn ganache -a X creates X accounts
+const numOrders = 4
+const numMarkets = 2
+const marketWidths = BigInt(Math.floor(0.05 * Number(fairPrice)))
+const orderSize = BigInt(1000)
 
 const Utils = require('./Utils')
 
@@ -181,7 +181,7 @@ contract('ClientAndMM', async function (accounts) {
   // downloads order information from blockchain, and calculates clearing price locally
   // by calling getClearingPrice()
   it('get Clearing Price Info', async function () {
-    const orders = await Utils.GetOpenOrders(inst)
+    const orders = await Utils.GetOpenOrders(inst, precision)
 
     blockchainBuyOrders = orders.blockchainBuyOrders
     blockchainSellOrders = orders.blockchainSellOrders
