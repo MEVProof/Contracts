@@ -21,7 +21,7 @@ async function PrintPoolDetails() {
         'Token_B': await token_b.methods.symbol().call(),
 
         'Phase': await exchange.methods._phase().call(),
-        'CommittedOrders': await exchange.methods._committedOrderCount().call(),
+        'CommittedOrders': await exchange.methods._unrevealedOrderCount().call(),
 
         'NumRevealedBuyOrders': await exchange.methods._getNumBuyOrders().call(),
         'NumRevealedSellOrders': await exchange.methods._getNumSellOrders().call(),
@@ -70,9 +70,9 @@ async function CommitOrder(side, price, quantity, maxTradeableWidth, deposit) {
 
 async function ChangePhase(phase) {
     if (phase === 'reveal') {
-        await exchange.methods.Move_To_Reveal_Phase().send({ from: account.address });
+        await exchange.methods.Move_To_Reveal_Phase().send({ from: account.address, gas: 2e6});
     } else if (phase === 'commit') {
-        await exchange.methods.Move_To_Commit_Phase().send({ from: account.address });
+        await exchange.methods.Move_To_Commit_Phase().send({ from: account.address, gas: 2e6 });
     } else {
         throw new Error("Unexpected phase: " + phase)
     }
