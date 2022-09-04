@@ -32,7 +32,6 @@ const fairPrice = localFairPrice * precision
   const marketWidths = BigInt(Math.floor(0.05 * Number(fairPrice)))
   const orderSize = BigInt(1000)
 
-
 const Utils = require('./Utils')
 
 // all numbers are converted to BigInt so they can be passed to Solidity
@@ -91,9 +90,7 @@ contract('ClientAndMM', async function (accounts) {
   const clientDepositAmount = 3
   let inst
   let reg
-  
 
-	
   let tknA
   let tknB
   let minTickSize
@@ -150,11 +147,7 @@ contract('ClientAndMM', async function (accounts) {
   it('should batch IDs properly', async function () {
     await inst.Batch_Add_IDs({ from: accounts[0]})
   })
-
-  
-
-
-  
+ 
   it('should add client commitments', async function () {
     for (let step = 0; step < numOrders; step++) {
       const buyProof = await Utils.GenerateProofOfDeposit(inst.contract, buyOrderDeposits[step], buyOrders[step].GetSolidityHash())
@@ -170,15 +163,13 @@ contract('ClientAndMM', async function (accounts) {
       await inst.MM_Commit(markets[step].GetSolidityHash(), { from: accounts[(2 * numOrders) + step], value: tenEth })
     }
   })
-  
-
 
   it('should move to Reveal phase', async function () {
     reg = await inst.Move_To_Reveal_Phase()
   })
 
   it('should reveal clients', async function () {
-   for (let step = 0; step < numOrders; step++) {
+    for (let step = 0; step < numOrders; step++) {
       await inst.Client_Reveal(Utils.toHex(buyOrders[step].GetSolidityHash()), buyOrders[step].Unwrap(), buyOrderDeposits[step].nullifierHex, buyOrderDeposits[step].randomnessHex, buyOrderDeposits[step].commitmentHex, buyOrderDeposits[step].nextHop.commitmentHex, { from: accounts[step], value: oneEth })
       await inst.Client_Reveal(Utils.toHex(sellOrders[step].GetSolidityHash()), sellOrders[step].Unwrap(), sellOrderDeposits[step].nullifierHex, sellOrderDeposits[step].randomnessHex, sellOrderDeposits[step].commitmentHex, sellOrderDeposits[step].nextHop.commitmentHex, { from: accounts[numOrders + step], value: oneEth })
     }

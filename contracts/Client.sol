@@ -40,7 +40,6 @@ contract ClientAndMM is MerkleTreeWithHistory {
     mapping(bytes32 => bool) public _nullifierHashes;
     // we store all commitments just to prevent accidental deposits with the same commitment
     mapping(bytes32 => bool) _registrations;
-    mapping(bytes32 => bool) _registrationDeposits;
 
     mapping(bytes32 => bool) _committedOrders;
     uint256 public _unrevealedOrderCount;
@@ -427,20 +426,20 @@ contract ClientAndMM is MerkleTreeWithHistory {
                 "re-register must deposit relayer fee, and to defer, the defer deposit fee"
             );
             require(!_registrations[_regId], "Registration ID already taken");
+
             _IDsToBeAdded.push(_regId);
-            _currentBatchIDBounty += deferredDepositFee;
-            
+            _currentBatchIDBounty += deferredDepositFee;            
             
             require(
-            msg.value >= (_escrowClient + _relayerFee + deferredDepositFee),
-            "Client register must deposit escrow + relayer fee"
-        );
-        require(!_registrations[_regId], "Registration ID already taken");
+                msg.value >= (_escrowClient + _relayerFee + deferredDepositFee),
+                "Client register must deposit escrow + relayer fee"
+            );
+            require(!_registrations[_regId], "Registration ID already taken");
 
-        _IDsToBeAdded.push(_regId);
-	    _currentBatchIDBounty += deferredDepositFee;
-        return true;
+            _IDsToBeAdded.push(_regId);
+            _currentBatchIDBounty += deferredDepositFee;
         }
+
         return true;
     }
 
@@ -531,7 +530,6 @@ contract ClientAndMM is MerkleTreeWithHistory {
             _revealedSellOrders.length + _revealedBuyOrders.length > 0,
             "No orders"
         );
-        
 
         uint256 revealedBuyOrderCount = _revealedBuyOrders.length;
         uint256 revealedSellOrderCount = _revealedSellOrders.length;
