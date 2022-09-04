@@ -93,12 +93,9 @@ contract('ClientAndMM', async function (accounts) {
 
   let tknA
   let tknB
-  let minTickSize
-  let wTight
-  let numBlockchainBuys
-  let numBlockchainSells
-  const blockchainBuyOrders = []
-  const blockchainSellOrders = []
+
+  let blockchainBuyOrders = []
+  let blockchainSellOrders = []
   let clearingInfo
 
   // specifies amount of each token to mint/apporve for each player
@@ -184,42 +181,11 @@ contract('ClientAndMM', async function (accounts) {
   // downloads order information from blockchain, and calculates clearing price locally
   // by calling getClearingPrice()
   it('get Clearing Price Info', async function () {
-    minTickSize = Number(await inst._getMinTickSize()) / Number(precision)
-    numBlockchainBuys = await inst._getNumBuyOrders()
-    numBlockchainSells = await inst._getNumSellOrders()
-    wTight = Number(await inst._getWidthTight())
+    const orders = await Utils.GetOpenOrders(inst)
 
-    for (let step = 0; step < numBlockchainBuys; step++) {
-      const buyOrder = await inst._revealedBuyOrders.call(step);
+    blockchainBuyOrders = orders.blockchainBuyOrders
+    blockchainSellOrders = orders.blockchainSellOrders
 
-      const w = Number(buyOrder._maxTradeableWidth)
-
-      if (w >= wTight) {
-        const p = buyOrder._price
-        const s = buyOrder._size
-
-        blockchainBuyOrders.push({
-          _price: Number(p.toString()) / Number(precision),
-          _size: Number(s.toString()) / Number(precision)
-        })
-      }
-    }
-
-    for (let step = 0; step < numBlockchainSells; step++) {
-      const sellOrder = await inst._revealedSellOrders.call(step);
-
-      const w = Number(sellOrder._maxTradeableWidth)
-
-      if (w >= wTight) {
-        const p = sellOrder._price
-        const s = sellOrder._size
-
-        blockchainSellOrders.push({
-          _price: Number(p.toString()) / Number(precision),
-          _size: Number(s.toString()) / Number(precision)
-        })
-      }
-    }
     console.log('blockchain buy orders:', blockchainBuyOrders)
     console.log('blockchain sell orders:', blockchainSellOrders)
 
@@ -237,11 +203,16 @@ contract('ClientAndMM', async function (accounts) {
   // as Solidity does. It is currently an on-chain computation, but running Solidity locally
   // would suffice.
   it('convert clearing price info to satisfy on-chain requirements', async function () {
-    clearingInfo = getClearingPrice(blockchainBuyOrders, blockchainSellOrders, minTickSize)
+    const minTickSize = Number(await inst._getMinTickSize()) / Number(precision)
+
+    clearingInfo = Utils.CalculateClearingPrice(blockchainBuyOrders, blockchainSellOrders, minTickSize)
     clearingInfo.clearingPrice = BigInt(Math.round(Number(clearingInfo.clearingPrice) * Number(precision)))
+
     await inst.clearingPriceConvertor(clearingInfo.clearingPrice, BigInt(Math.floor(Number(clearingInfo.volumeSettled))), BigInt(Math.floor(Number(clearingInfo.imbalance))), { from: accounts[0], gasLimit: 10000000 })
+    
     clearingInfo.volumeSettled = BigInt(Number(await inst._getSolVolumeSettled()))
     clearingInfo.imbalance = BigInt(Number(await inst._getSolImbalance()))
+    
     console.log('clearing price:', Number(clearingInfo.clearingPrice) / Number(precision), ', volume settled in token A:', Number(clearingInfo.volumeSettled) / Number(precision), ', imbalance:', Number(clearingInfo.imbalance) / Number(precision))
   })
 
@@ -285,106 +256,3 @@ contract('ClientAndMM', async function (accounts) {
     }
   })
 })
-
-function getClearingPrice (buyOrders, sellOrders, minTickSize) {
-  const _numBuys = buyOrders.length
-  const _numSells = sellOrders.length
-  let _prices = []
-
-  for (let step = 0; step < _numBuys; step++) {
-    if (_prices.indexOf(buyOrders[step]._price) === -1) {
-      _prices.push(buyOrders[step]._price)
-    }
-  }
-  for (let step = 0; step < _numSells; step++) {
-    if (_prices.indexOf(sellOrders[step]._price) === -1) {
-      _prices.push(sellOrders[step]._price)
-    }
-  }
-  // console.log('check1:', _prices);
-  _prices = _prices.sort(function (a, b) { return a - b })
-  // console.log('check2:', _prices);
-  const _numPricePoints = _prices.length
-  const _buyVolumes = []
-  const _sellVolumes = []
-  for (let step = 0; step < _numBuys; step++) {
-    _buyVolumes[buyOrders[step]._price] = (_buyVolumes[buyOrders[step]._price] || 0) + buyOrders[step]._size
-  }
-  for (let step = 0; step < _numSells; step++) {
-    _sellVolumes[sellOrders[step]._price] = (_sellVolumes[sellOrders[step]._price] || 0) + sellOrders[step]._size
-  }
-  // console.log('check3.1:', _buyVolumes);
-  // console.log('check3.2:', _sellVolumes);
-  for (let step = 0; step < _numPricePoints - 1; step++) {
-    _buyVolumes[_prices[(_numPricePoints - 2) - step]] = (_buyVolumes[_prices[(_numPricePoints - 2) - step]] || 0) + (_buyVolumes[_prices[(_numPricePoints - 1) - step]] || 0)
-    _sellVolumes[_prices[1 + step]] = (_sellVolumes[_prices[1 + step]] || 0) + (_sellVolumes[_prices[step]] || 0)
-  }
-
-  const _clearingVolumes = []
-  for (let step = 0; step < _numPricePoints; step++) {
-    _clearingVolumes[_prices[step]] = Math.min((_buyVolumes[_prices[step]] || 0), (_sellVolumes[_prices[step]] || 0) * _prices[step])
-  }
-  // console.log('check4:', _clearingVolumes);
-  let _maxVolume = 0
-  let _clearingPrice = -1
-  for (let step = 0; step < _numPricePoints; step++) {
-    if (_clearingVolumes[_prices[step]] > _maxVolume) {
-      _maxVolume = _clearingVolumes[_prices[step]]
-      _clearingPrice = _prices[step]
-    }
-  }
-  // console.log('check4.1:', _maxVolume);
-  const _imbalances = []
-  for (let step = 0; step < _numPricePoints; step++) {
-    _imbalances[_prices[step]] = _buyVolumes[_prices[step]] - (_sellVolumes[_prices[step]] * _prices[step])
-  }
-
-  // console.log('check4.2:', _clearingVolumes.indexOf(_maxVolume));
-  let _imbalance = _imbalances[_clearingPrice]
-  // console.log('check5:', _clearingPrice, _imbalance);
-  let _buyVolumeFinal = 0
-  let _sellVolumeFinal = 0
-
-  if (_imbalance > 0) {
-    for (let step = 0; step < _numBuys; step++) {
-      if (buyOrders[step]._price > _clearingPrice) {
-        _buyVolumeFinal += buyOrders[step]._size
-      }
-    }
-    for (let step = 0; step < _numSells; step++) {
-      if (sellOrders[step]._price <= _clearingPrice) {
-        _sellVolumeFinal += sellOrders[step]._size
-      }
-    }
-    const _upperbound = _prices[_prices.indexOf(_clearingPrice) + 1]
-    let _newImbalance = _buyVolumeFinal - (_sellVolumeFinal * (_clearingPrice + minTickSize))
-    while (_maxVolume === Math.min(_buyVolumeFinal, _sellVolumeFinal * (_clearingPrice + minTickSize)) && Math.abs(_newImbalance) < Math.abs(_imbalance) && _clearingPrice + minTickSize < _upperbound) {
-      _clearingPrice += minTickSize
-      _imbalance = _newImbalance
-      _newImbalance = _buyVolumeFinal - (_sellVolumeFinal * (_clearingPrice + minTickSize))
-    }
-  } else {
-    for (let step = 0; step < _numBuys; step++) {
-      if (buyOrders[step]._price >= _clearingPrice) {
-        _buyVolumeFinal += buyOrders[step]._size
-      }
-    }
-    for (let step = 0; step < _numSells; step++) {
-      if (sellOrders[step]._price < _clearingPrice) {
-        _sellVolumeFinal += sellOrders[step]._size
-      }
-    }
-    const _lowerbound = _prices[_prices.indexOf(_clearingPrice) - 1]
-    let _newImbalance = _buyVolumeFinal - (_sellVolumeFinal * (_clearingPrice - minTickSize))
-    while (_maxVolume === Math.min(_buyVolumeFinal, _sellVolumeFinal * (_clearingPrice - minTickSize)) && Math.abs(_newImbalance) < Math.abs(_imbalance) && _clearingPrice - minTickSize > _lowerbound) {
-      _clearingPrice -= minTickSize
-      _imbalance = _newImbalance
-      _newImbalance = _buyVolumeFinal - (_sellVolumeFinal * (_clearingPrice - minTickSize))
-    }
-  }
-  return {
-    clearingPrice: _clearingPrice,
-    volumeSettled: _maxVolume,
-    imbalance: _imbalance
-  }
-}
