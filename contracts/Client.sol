@@ -143,7 +143,7 @@ contract ClientAndMM is MerkleTreeWithHistory {
         // reward to be paid to player successfully settling orders.
         _settlementBounty = 1;
 
-        // initialise phase as Commit
+        // initialise phase as Inactive
         _phase = Phase.Inactive;
 
         _lastPhaseUpdate = block.number;
