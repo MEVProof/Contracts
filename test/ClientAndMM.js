@@ -181,20 +181,18 @@ contract('ClientAndMM', async function (accounts) {
   // downloads order information from blockchain, and calculates clearing price locally
   // by calling getClearingPrice()
   it('get Clearing Price Info', async function () {
-    const orders = await Utils.GetOpenOrders(inst, precision)
+    const orders = await Utils.GetOpenOrders(inst.contract, precision)
 
-    blockchainBuyOrders = orders.blockchainBuyOrders
-    blockchainSellOrders = orders.blockchainSellOrders
+    blockchainBuyOrders = orders.blockchainBuyOrders;
+    blockchainSellOrders = orders.blockchainSellOrders;
 
-    console.log('blockchain buy orders:', blockchainBuyOrders)
-    console.log('blockchain sell orders:', blockchainSellOrders)
-
+    // TODO: In GetOpenOrders we divide by precision. Now we multiply by it?
     for (let step = 0; step < blockchainBuyOrders.length; step++) {
-      blockchainBuyOrders[step]._size = blockchainBuyOrders[step]._size * Number(precision)
+      blockchainBuyOrders[step].size = blockchainBuyOrders[step].size * Number(precision)
     }
 
     for (let step = 0; step < blockchainSellOrders.length; step++) {
-      blockchainSellOrders[step]._size = blockchainSellOrders[step]._size * Number(precision)
+      blockchainSellOrders[step].size = blockchainSellOrders[step].size * Number(precision)
     }
   })
 
@@ -226,14 +224,15 @@ contract('ClientAndMM', async function (accounts) {
     let theoreticBBalance
     let actualABalance
     let actualBBalance
+
     const _CP = Number(clearingInfo.clearingPrice) / Number(precision)
     for (let step = 0; step < numOrders; step++) {
       actualABalance = Number(await tknA.balanceOf(accounts[step])) / Number(precision)
       actualBBalance = Number(await tknB.balanceOf(accounts[step])) / Number(precision)
       // not checking properly for imbalance yet
-      if (_CP < blockchainBuyOrders[step]._price) {
-        theoreticABalance = (Number(mintSizeA) - blockchainBuyOrders[step]._size) / Number(precision)
-        theoreticBBalance = (Number(blockchainBuyOrders[step]._size) / _CP) / Number(precision)
+      if (_CP < blockchainBuyOrders[step].price) {
+        theoreticABalance = (Number(mintSizeA) - blockchainBuyOrders[step].size) / Number(precision)
+        theoreticBBalance = (Number(blockchainBuyOrders[step].size) / _CP) / Number(precision)
       } else {
         theoreticABalance = Number(mintSizeA / precision)
         theoreticBBalance = 0
@@ -241,17 +240,19 @@ contract('ClientAndMM', async function (accounts) {
 
       console.log('Account ', step, '. expected A balance:', theoreticABalance, ', actual A balance:', Number(actualABalance.toString()), ', expected B balance:', theoreticBBalance, ', actual B balance:', Number(actualBBalance.toString()))
     }
+
     for (let step = 0; step < numOrders; step++) {
       actualABalance = Number(await tknA.balanceOf(accounts[numOrders + step])) / Number(precision)
       actualBBalance = Number(await tknB.balanceOf(accounts[numOrders + step])) / Number(precision)
       // not checking properly for imbalance yet
-      if (_CP >= blockchainSellOrders[step]._price) {
-        theoreticABalance = (blockchainSellOrders[step]._size * _CP) / Number(precision)
-        theoreticBBalance = (Number(mintSizeB) - blockchainSellOrders[step]._size) / Number(precision)
+      if (_CP >= blockchainSellOrders[step].price) {
+        theoreticABalance = (blockchainSellOrders[step].size * _CP) / Number(precision)
+        theoreticBBalance = (Number(mintSizeB) - blockchainSellOrders[step].size) / Number(precision)
       } else {
         theoreticABalance = 0
         theoreticBBalance = Number(mintSizeB / precision)
       }
+      
       console.log('Account ', numOrders + step, '. expected A balance:', theoreticABalance, ', actual A balance:', Number(actualABalance.toString()), ', expected B balance:', theoreticBBalance, ', actual B balance:', Number(actualBBalance.toString()))
     }
   })

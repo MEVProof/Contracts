@@ -183,122 +183,131 @@ async function GenerateProofOfDeposit(contract, deposit, orderHash, relayerAddre
 }
 
 function CalculateClearingPrice(buyOrders, sellOrders, minTickSize) {
-  const _numBuys = buyOrders.length
-  const _numSells = sellOrders.length
-  let _prices = []
+  const numBuys = buyOrders.length
+  const numSells = sellOrders.length
 
-  for (let step = 0; step < _numBuys; step++) {
-    if (_prices.indexOf(buyOrders[step]._price) === -1) {
-      _prices.push(buyOrders[step]._price)
+  let prices = []
+
+  for (let step = 0; step < numBuys; step++) {
+    if (prices.indexOf(buyOrders[step].price) === -1) {
+      prices.push(buyOrders[step].price)
     }
   }
-  for (let step = 0; step < _numSells; step++) {
-    if (_prices.indexOf(sellOrders[step]._price) === -1) {
-      _prices.push(sellOrders[step]._price)
+
+  for (let step = 0; step < numSells; step++) {
+    if (prices.indexOf(sellOrders[step].price) === -1) {
+      prices.push(sellOrders[step].price)
     }
   }
+  
   // console.log('check1:', _prices);
-  _prices = _prices.sort(function (a, b) { return a - b })
+  prices = prices.sort(function (a, b) { return a - b })
   // console.log('check2:', _prices);
-  const _numPricePoints = _prices.length
-  const _buyVolumes = []
-  const _sellVolumes = []
-  for (let step = 0; step < _numBuys; step++) {
-    _buyVolumes[buyOrders[step]._price] = (_buyVolumes[buyOrders[step]._price] || 0) + buyOrders[step]._size
+
+
+  const numPricePoints = prices.length
+  const buyVolumes = []
+  const sellVolumes = []
+  const imbalances = []
+
+  for (let step = 0; step < numBuys; step++) {
+    buyVolumes[buyOrders[step].price] = (buyVolumes[buyOrders[step].price] || 0) + buyOrders[step].size
   }
-  for (let step = 0; step < _numSells; step++) {
-    _sellVolumes[sellOrders[step]._price] = (_sellVolumes[sellOrders[step]._price] || 0) + sellOrders[step]._size
+  for (let step = 0; step < numSells; step++) {
+    sellVolumes[sellOrders[step].price] = (sellVolumes[sellOrders[step].price] || 0) + sellOrders[step].size
   }
   // console.log('check3.1:', _buyVolumes);
   // console.log('check3.2:', _sellVolumes);
-  for (let step = 0; step < _numPricePoints - 1; step++) {
-    _buyVolumes[_prices[(_numPricePoints - 2) - step]] = (_buyVolumes[_prices[(_numPricePoints - 2) - step]] || 0) + (_buyVolumes[_prices[(_numPricePoints - 1) - step]] || 0)
-    _sellVolumes[_prices[1 + step]] = (_sellVolumes[_prices[1 + step]] || 0) + (_sellVolumes[_prices[step]] || 0)
+  for (let step = 0; step < numPricePoints - 1; step++) {
+    buyVolumes[prices[(numPricePoints - 2) - step]] = (buyVolumes[prices[(numPricePoints - 2) - step]] || 0) + (buyVolumes[prices[(numPricePoints - 1) - step]] || 0)
+    sellVolumes[prices[1 + step]] = (sellVolumes[prices[1 + step]] || 0) + (sellVolumes[prices[step]] || 0)
   }
 
   const _clearingVolumes = []
-  for (let step = 0; step < _numPricePoints; step++) {
-    _clearingVolumes[_prices[step]] = Math.min((_buyVolumes[_prices[step]] || 0), (_sellVolumes[_prices[step]] || 0) * _prices[step])
+  for (let step = 0; step < numPricePoints; step++) {
+    _clearingVolumes[prices[step]] = Math.min((buyVolumes[prices[step]] || 0), (sellVolumes[prices[step]] || 0) * prices[step])
   }
   // console.log('check4:', _clearingVolumes);
-  let _maxVolume = 0
-  let _clearingPrice = -1
-  for (let step = 0; step < _numPricePoints; step++) {
-    if (_clearingVolumes[_prices[step]] > _maxVolume) {
-      _maxVolume = _clearingVolumes[_prices[step]]
-      _clearingPrice = _prices[step]
+  let maxVolume = 0
+  let clearingPrice = -1
+  for (let step = 0; step < numPricePoints; step++) {
+    if (_clearingVolumes[prices[step]] > maxVolume) {
+      maxVolume = _clearingVolumes[prices[step]]
+      clearingPrice = prices[step]
     }
   }
   // console.log('check4.1:', _maxVolume);
-  const _imbalances = []
-  for (let step = 0; step < _numPricePoints; step++) {
-    _imbalances[_prices[step]] = _buyVolumes[_prices[step]] - (_sellVolumes[_prices[step]] * _prices[step])
+  for (let step = 0; step < numPricePoints; step++) {
+    imbalances[prices[step]] = buyVolumes[prices[step]] - (sellVolumes[prices[step]] * prices[step])
   }
 
   // console.log('check4.2:', _clearingVolumes.indexOf(_maxVolume));
-  let _imbalance = _imbalances[_clearingPrice]
+  let imbalanceAtClearingPrice = imbalances[clearingPrice]
   // console.log('check5:', _clearingPrice, _imbalance);
-  let _buyVolumeFinal = 0
-  let _sellVolumeFinal = 0
+  let buyVolumeFinal = 0
+  let sellVolumeFinal = 0
 
-  if (_imbalance > 0) {
-    for (let step = 0; step < _numBuys; step++) {
-      if (buyOrders[step]._price > _clearingPrice) {
-        _buyVolumeFinal += buyOrders[step]._size
+  if (imbalanceAtClearingPrice > 0) {
+    for (let step = 0; step < numBuys; step++) {
+      if (buyOrders[step].price > clearingPrice) {
+        buyVolumeFinal += buyOrders[step].size
       }
     }
-    for (let step = 0; step < _numSells; step++) {
-      if (sellOrders[step]._price <= _clearingPrice) {
-        _sellVolumeFinal += sellOrders[step]._size
+
+    for (let step = 0; step < numSells; step++) {
+      if (sellOrders[step].price <= clearingPrice) {
+        sellVolumeFinal += sellOrders[step].size
       }
     }
-    const _upperbound = _prices[_prices.indexOf(_clearingPrice) + 1]
-    let _newImbalance = _buyVolumeFinal - (_sellVolumeFinal * (_clearingPrice + minTickSize))
-    while (_maxVolume === Math.min(_buyVolumeFinal, _sellVolumeFinal * (_clearingPrice + minTickSize)) && Math.abs(_newImbalance) < Math.abs(_imbalance) && _clearingPrice + minTickSize < _upperbound) {
-      _clearingPrice += minTickSize
-      _imbalance = _newImbalance
-      _newImbalance = _buyVolumeFinal - (_sellVolumeFinal * (_clearingPrice + minTickSize))
+
+    const upperbound = prices[prices.indexOf(clearingPrice) + 1]
+    let newImbalance = buyVolumeFinal - (sellVolumeFinal * (clearingPrice + minTickSize))
+
+    while (maxVolume === Math.min(buyVolumeFinal, sellVolumeFinal * (clearingPrice + minTickSize)) && Math.abs(newImbalance) < Math.abs(imbalanceAtClearingPrice) && clearingPrice + minTickSize < upperbound) {
+      clearingPrice += minTickSize
+      imbalanceAtClearingPrice = newImbalance
+      newImbalance = buyVolumeFinal - (sellVolumeFinal * (clearingPrice + minTickSize))
     }
   } else {
-    for (let step = 0; step < _numBuys; step++) {
-      if (buyOrders[step]._price >= _clearingPrice) {
-        _buyVolumeFinal += buyOrders[step]._size
+    for (let step = 0; step < numBuys; step++) {
+      if (buyOrders[step].price >= clearingPrice) {
+        buyVolumeFinal += buyOrders[step].size
       }
     }
 
-    for (let step = 0; step < _numSells; step++) {
-      if (sellOrders[step]._price < _clearingPrice) {
-        _sellVolumeFinal += sellOrders[step]._size
+    for (let step = 0; step < numSells; step++) {
+      if (sellOrders[step].price < clearingPrice) {
+        sellVolumeFinal += sellOrders[step].size
       }
     }
 
-    const _lowerbound = _prices[_prices.indexOf(_clearingPrice) - 1]
+    const lowerbound = prices[prices.indexOf(clearingPrice) - 1]    
+    let newImbalance = buyVolumeFinal - (sellVolumeFinal * (clearingPrice - minTickSize))
     
-    let _newImbalance = _buyVolumeFinal - (_sellVolumeFinal * (_clearingPrice - minTickSize))
-    while (_maxVolume === Math.min(_buyVolumeFinal, _sellVolumeFinal * (_clearingPrice - minTickSize)) && Math.abs(_newImbalance) < Math.abs(_imbalance) && _clearingPrice - minTickSize > _lowerbound) {
-      _clearingPrice -= minTickSize
-      _imbalance = _newImbalance
-      _newImbalance = _buyVolumeFinal - (_sellVolumeFinal * (_clearingPrice - minTickSize))
+    while (maxVolume === Math.min(buyVolumeFinal, sellVolumeFinal * (clearingPrice - minTickSize)) && Math.abs(newImbalance) < Math.abs(imbalanceAtClearingPrice) && clearingPrice - minTickSize > lowerbound) {
+      clearingPrice -= minTickSize
+      imbalanceAtClearingPrice = newImbalance
+      newImbalance = buyVolumeFinal - (sellVolumeFinal * (clearingPrice - minTickSize))
     }
   }
 
   return {
-    clearingPrice: _clearingPrice,
-    volumeSettled: _maxVolume,
-    imbalance: _imbalance
+    clearingPrice: clearingPrice,
+    volumeSettled: maxVolume,
+    imbalance: imbalanceAtClearingPrice
   }
 }
 
-async function GetOpenOrders(inst, precision) {
-  const numBlockchainBuys = await inst._getNumBuyOrders()
-  const numBlockchainSells = await inst._getNumSellOrders()
-  const wTight = Number(await inst._getWidthTight())
+async function GetOpenOrders(contract, precision) {
+  const numBlockchainBuys = await contract.methods._getNumBuyOrders().call()
+  const numBlockchainSells = await contract.methods._getNumSellOrders().call()
+  const wTight = Number(await contract.methods._getWidthTight().call())
 
   let blockchainBuyOrders = []
   let blockchainSellOrders = []
 
   for (let step = 0; step < numBlockchainBuys; step++) {
-    const buyOrder = await inst._revealedBuyOrders.call(step)
+    const buyOrder = await contract.methods._revealedBuyOrders(step).call()
 
     const w = Number(buyOrder._maxTradeableWidth)
 
@@ -307,14 +316,15 @@ async function GetOpenOrders(inst, precision) {
       const s = buyOrder._size
 
       blockchainBuyOrders.push({
-        _price: Number(p.toString()) / Number(precision),
-        _size: Number(s.toString()) / Number(precision)
+        price: Number(p.toString()) / Number(precision),
+        size: Number(s.toString()) / Number(precision),
+        owner: buyOrder._owner
       })
     }
   }
 
   for (let step = 0; step < numBlockchainSells; step++) {
-    const sellOrder = await inst._revealedSellOrders.call(step)
+    const sellOrder = await contract.methods._revealedSellOrders(step).call()
 
     const w = Number(sellOrder._maxTradeableWidth)
 
@@ -323,8 +333,9 @@ async function GetOpenOrders(inst, precision) {
       const s = sellOrder._size
 
       blockchainSellOrders.push({
-        _price: Number(p.toString()) / Number(precision),
-        _size: Number(s.toString()) / Number(precision)
+        price: Number(p.toString()) / Number(precision),
+        size: Number(s.toString()) / Number(precision),
+        owner: sellOrder._owner
       })
     }
   }
@@ -339,7 +350,6 @@ exports.Order = Order
 exports.MarketMakerOrder = MarketMakerOrder
 exports.Deposit = Deposit
 exports.GenerateDeposit = GenerateDeposit
-exports.GenerateMerkleProof = GenerateMerklePath
 exports.GenerateProofOfDeposit = GenerateProofOfDeposit
 exports.toHex = toHex
 exports.OrderFromJSON = OrderFromJSON

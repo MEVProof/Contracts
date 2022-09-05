@@ -14,13 +14,28 @@ let web3, exchange, account, token_a, token_b, state
 const rpc = 'http://localhost:8545'
 const clientDepositAmount = 2
 
+function ParsePhase(phase){
+    switch (Number(phase)) {
+        case 0:
+            return "Inactive";    
+        case 1:
+            return "Commit";
+        case 2:
+            return "Reveal";
+        case 3:
+            return "Resolution"
+        default:
+            return '' + phase
+    }
+}
+
 async function PrintPoolDetails() {
     console.log('Pool details');
     console.log({
         'Token_A': await token_a.methods.symbol().call(),
         'Token_B': await token_b.methods.symbol().call(),
 
-        'Phase': await exchange.methods._phase().call(),
+        'Phase': ParsePhase(await exchange.methods._phase().call()),
         'CommittedOrders': await exchange.methods._unrevealedOrderCount().call(),
 
         'NumRevealedBuyOrders': await exchange.methods._getNumBuyOrders().call(),
@@ -112,30 +127,19 @@ async function RevealOrder(orderHash) {
 }
 
 async function ShowOrderBook() {
-    const numBlockchainBuys = await exchange.methods._getNumBuyOrders().call()
-    const numBlockchainSells = await exchange.methods._getNumSellOrders().call()
+    const decimalPoints = 10
+    const precision = BigInt(Math.pow(10, decimalPoints))
 
-    let buyOrders = []
-    let sellOrders = []
+    let { buyOrders, sellOrders } = await utils.GetOpenOrders(exchange, precision)
 
-    for (let index = 0; index < numBlockchainBuys; index++) {
-        const element = await exchange.methods._revealedBuyOrders(index).call();
-        buyOrders.push(element);
-    }
-
-    for (let index = 0; index < numBlockchainSells; index++) {
-        const element = await exchange.methods._revealedSellOrders(index).call();
-        sellOrders.push(element);
-    }
-
-    buyOrders.sort((a, b) => a._price - b._price);
-    sellOrders.sort((a, b) => b._price - a._price);
+    buyOrders.sort((a, b) => a.price - b.price);
+    sellOrders.sort((a, b) => b.price - a.price);
 
     console.log("Buy Orders:");
 
     if (buyOrders.length > 0) {
         buyOrders.forEach(order => {
-            console.log('\t%d\t%d\t%s', order._price, order._size, order._owner == account.address ? "*" : "");
+            console.log('\t%d\t%d\t%s', order.price, order.size, order.owner == account.address ? "*" : "");
         });
     } else {
         console.log('==== No Orders ====');
@@ -147,7 +151,7 @@ async function ShowOrderBook() {
 
     if (sellOrders.length > 0) {
         sellOrders.forEach(order => {
-            console.log('\t%d\t%d', order._price, order._size, order._owner == account.address ? "*" : "");
+            console.log('\t%d\t%d', order.price, order.size, order.owner == account.address ? "*" : "");
         });
     } else {
         console.log('==== No Orders ====');
