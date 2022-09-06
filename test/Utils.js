@@ -95,6 +95,11 @@ class MarketMakerOrder {
     }
   };
 }
+
+function MMOrderFromJSON(asJson) {
+  return new MarketMakerOrder(asJson._bidPrice, asJson._bidSize, asJson._offerPrice, asJson._offerSize, asJson._owner)
+}
+
 class Deposit {
   constructor(nullifier, randomness, nextHop = null) {
     this.nullifier = nullifier
@@ -298,7 +303,7 @@ function CalculateClearingPrice(buyOrders, sellOrders, minTickSize) {
   }
 }
 
-async function GetOpenOrders(contract, precision) {
+async function GetOpenOrders(contract, precision, checkWidth = true) {
   const numBlockchainBuys = await contract.methods._getNumBuyOrders().call()
   const numBlockchainSells = await contract.methods._getNumSellOrders().call()
   const wTight = Number(await contract.methods._getWidthTight().call())
@@ -311,13 +316,13 @@ async function GetOpenOrders(contract, precision) {
 
     const w = Number(buyOrder._maxTradeableWidth)
 
-    if (w >= wTight) {
+    if (!checkWidth || w >= wTight) {
       const p = buyOrder._price
       const s = buyOrder._size
 
       blockchainBuyOrders.push({
         price: Number(p.toString()) / Number(precision),
-        size: Number(s.toString()) / Number(precision),
+        size: Number(s.toString()),
         owner: buyOrder._owner
       })
     }
@@ -328,13 +333,13 @@ async function GetOpenOrders(contract, precision) {
 
     const w = Number(sellOrder._maxTradeableWidth)
 
-    if (w >= wTight) {
+    if (!checkWidth || w >= wTight) {
       const p = sellOrder._price
       const s = sellOrder._size
 
       blockchainSellOrders.push({
         price: Number(p.toString()) / Number(precision),
-        size: Number(s.toString()) / Number(precision),
+        size: Number(s.toString()),
         owner: sellOrder._owner
       })
     }
@@ -353,5 +358,6 @@ exports.GenerateDeposit = GenerateDeposit
 exports.GenerateProofOfDeposit = GenerateProofOfDeposit
 exports.toHex = toHex
 exports.OrderFromJSON = OrderFromJSON
+exports.MMOrderFromJSON = MMOrderFromJSON
 exports.CalculateClearingPrice = CalculateClearingPrice
 exports.GetOpenOrders = GetOpenOrders

@@ -1038,18 +1038,16 @@ contract ClientAndMM is MerkleTreeWithHistory {
             "No orders"
         );
 
-        uint256 revealedBuyOrderCount = _revealedBuyOrders.length;
-        uint256 revealedSellOrderCount = _revealedSellOrders.length;
         // Compute max(buyOrders.price) and min(sellOrders.price)
         uint256 maxBuyPrice = 0;
         uint256 minSellPrice = type(uint256).max;
 
-        for (uint256 i = 0; i < revealedBuyOrderCount; i++) {
+        for (uint256 i = 0; i < _revealedBuyOrders.length; i++) {
             if (_revealedBuyOrders[i]._price > maxBuyPrice) {
                 maxBuyPrice = _revealedBuyOrders[i]._price;
             }
         }
-        for (uint256 i = 0; i < revealedSellOrderCount; i++) {
+        for (uint256 i = 0; i < _revealedSellOrders.length; i++) {
             if (_revealedSellOrders[i]._price < minSellPrice) {
                 minSellPrice = _revealedSellOrders[i]._price;
             }
@@ -1059,21 +1057,23 @@ contract ClientAndMM is MerkleTreeWithHistory {
         uint256 buyVolume = 0;
         uint256 sellVolume = 0;
 
-        for (uint256 i = 0; i < revealedBuyOrderCount; i++) {
+        for (uint256 i = 0; i < _revealedBuyOrders.length; i++) {
             if (_revealedBuyOrders[i]._price >= clearingPrice) {
                 buyVolume += _revealedBuyOrders[i]._size;
             }
         }
 
-        for (uint256 i = 0; i < revealedSellOrderCount; i++) {
+        for (uint256 i = 0; i < _revealedSellOrders.length; i++) {
             if (_revealedSellOrders[i]._price <= clearingPrice) {
                 sellVolume += _revealedSellOrders[i]._size;
             }
         }
+
         solVolumeSettled = Math.min(
             buyVolume,
             MulByClearingPrice(sellVolume, clearingPrice)
         );
+
         solImbalance =
             int256(buyVolume) -
             int256(MulByClearingPrice(sellVolume, clearingPrice));

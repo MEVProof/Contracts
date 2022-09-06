@@ -186,14 +186,10 @@ contract('ClientAndMM', async function (accounts) {
     blockchainBuyOrders = orders.blockchainBuyOrders;
     blockchainSellOrders = orders.blockchainSellOrders;
 
-    // TODO: In GetOpenOrders we divide by precision. Now we multiply by it?
-    for (let step = 0; step < blockchainBuyOrders.length; step++) {
-      blockchainBuyOrders[step].size = blockchainBuyOrders[step].size * Number(precision)
-    }
+    const minTickSize = Number(await inst._getMinTickSize()) / Number(precision)
 
-    for (let step = 0; step < blockchainSellOrders.length; step++) {
-      blockchainSellOrders[step].size = blockchainSellOrders[step].size * Number(precision)
-    }
+    clearingInfo = Utils.CalculateClearingPrice(blockchainBuyOrders, blockchainSellOrders, minTickSize)
+    clearingInfo.clearingPrice = BigInt(Math.round(Number(clearingInfo.clearingPrice) * Number(precision)))
   })
 
   // due to rounding errors, buyVol, sellVol, CP and imbalance are improbable to match on chain
@@ -201,11 +197,6 @@ contract('ClientAndMM', async function (accounts) {
   // as Solidity does. It is currently an on-chain computation, but running Solidity locally
   // would suffice.
   it('convert clearing price info to satisfy on-chain requirements', async function () {
-    const minTickSize = Number(await inst._getMinTickSize()) / Number(precision)
-
-    clearingInfo = Utils.CalculateClearingPrice(blockchainBuyOrders, blockchainSellOrders, minTickSize)
-    clearingInfo.clearingPrice = BigInt(Math.round(Number(clearingInfo.clearingPrice) * Number(precision)))
-
     await inst.clearingPriceConvertor(clearingInfo.clearingPrice, BigInt(Math.floor(Number(clearingInfo.volumeSettled))), BigInt(Math.floor(Number(clearingInfo.imbalance))), { from: accounts[0], gasLimit: 10000000 })
     
     clearingInfo.volumeSettled = BigInt(Number(await inst._getSolVolumeSettled()))
