@@ -35,6 +35,8 @@ function ParsePhase(phase) {
 async function PrintPoolDetails() {
     console.log('Pool details');
     console.log({
+        'Active Account': account.address,
+
         'Token_A': await token_a.methods.symbol().call(),
         'Token_B': await token_b.methods.symbol().call(),
 
@@ -311,7 +313,20 @@ async function main() {
     token_a = await ConfigureToken(__dirname + '/../build/contracts/TokenA.json');
     token_b = await ConfigureToken(__dirname + '/../build/contracts/TokenB.json');
 
-    account = web3.eth.accounts.privateKeyToAccount('0x' + '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d'.toUpperCase())
+    accounts = [
+        '0x' + '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d'.toUpperCase(),
+        '0x' + '6cbed15c793ce57650b9877cf6fa156fbef513c4e6134f022a85b1ffdd59b2a1'.toUpperCase(),
+        '0x' + '6370fd033278c143179d81c5526140625662b8daa446c22ee2d73db3707e620c'.toUpperCase(),
+        '0x' + '646f1ce2fdad0e6deeeb5c7e8e5543bdde65e86029e2fd9fc169899c440a7913'.toUpperCase(),
+        '0x' + 'add53f9a7e588d003326d1cbf9e4a43c061aadd9bc938c843a79e7b4fd2ad743'.toUpperCase(),
+        '0x' + '395df67f0c2d2d9fe1ad08d1bc8b6627011959b79c53d7dd6a3536a33ab8a4fd'.toUpperCase(),
+        '0x' + 'e485d098507f54e7733a205420dfddbe58db035fa577fc294ebd14db90767a52'.toUpperCase(),
+        '0x' + 'a453611d9419d0e56f499079478fd72c37b251a94bfde4d19872c44cf65386e3'.toUpperCase(),
+        '0x' + '829e924fdf021ba3dbbc4225edfece9aca04b929d6e75613329ca6f1d31c0bb4'.toUpperCase(),
+        '0x' + 'b0057716d5917badaf911b193b12b910811c1497b5bada8d7711f758981c3773'.toUpperCase()
+    ]
+
+    account = web3.eth.accounts.privateKeyToAccount(accounts[process.env.ACCOUNT_INDEX ?? 0])
 
     state = LoadState('state.json');
 
