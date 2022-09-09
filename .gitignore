@@ -6,4 +6,4 @@ artifacts/
 #ENV files
 .env
 
-state.json
+state*.json

@@ -6,6 +6,8 @@ const Web3 = require('web3')
 const { toWei, fromWei, toBN, BN } = require('web3-utils')
 const fs = require('fs');
 
+ACCOUNT_INDEX = process.env.ACCOUNT_INDEX ?? 0
+STATE_FILE = 'state.' + ACCOUNT_INDEX + '.json'
 
 let netId = ""
 
@@ -35,10 +37,12 @@ function ParsePhase(phase) {
 async function PrintPoolDetails() {
     console.log('Pool details');
     console.log({
-        'Active Account': account.address,
+        // 'Active Account': account.address,
 
         'Token_A': await token_a.methods.symbol().call(),
         'Token_B': await token_b.methods.symbol().call(),
+
+        'Deposits': await exchange.methods.nextIndex().call(),
 
         'Phase': ParsePhase(await exchange.methods._phase().call()),
         'CommittedOrders': await exchange.methods._unrevealedOrderCount().call(),
@@ -56,6 +60,10 @@ async function ConfigureToken(pathToContractJson) {
     return new web3.eth.Contract(contractJson.abi, contractAddress)
 }
 
+async function GetPoolName() {
+    return await token_a.methods.symbol().call() + ' -> ' + await token_b.methods.symbol().call();
+}
+
 async function AddDeposit() {
     deposit = Utils.GenerateDeposit();
 
@@ -63,7 +71,7 @@ async function AddDeposit() {
 
     state.unspentDeposits.push(deposit);
 
-    console.log('Added deposit of %d to pool %s. Deposit id %s', clientDepositAmount, exchange._address.toString(), deposit.commitmentHex)
+    console.log('Added deposit of %d to pool %s. Deposit id %s', clientDepositAmount, await GetPoolName(), deposit.commitmentHex)
 }
 
 async function CommitOrder(side, price, quantity, maxTradeableWidth, deposit) {
@@ -203,38 +211,44 @@ async function RevealAll() {
 
         const { order, deposit } = state.committedOrders[index];
 
-        await RevealSingleOrder(Utils.OrderFromJSON(order), deposit);
-
-        state.committedOrders[index] = null;
+        try {
+            await RevealSingleOrder(Utils.OrderFromJSON(order), deposit);
+            state.committedOrders[index] = null;
+        } catch (e){
+            console.error(e)
+        }
     }
 }
 
 async function ShowOrderBook() {
     let { blockchainBuyOrders, blockchainSellOrders } = await Utils.GetOpenOrders(exchange, precision, checkWidth=false)
 
-    blockchainBuyOrders.sort((a, b) => a.price - b.price);
+    blockchainBuyOrders.sort((a, b) => b.price - a.price);
     blockchainSellOrders.sort((a, b) => b.price - a.price);
-
-    console.log("Buy Orders:");
-
-    if (blockchainBuyOrders.length > 0) {
-        blockchainBuyOrders.forEach(order => {
-            console.log('\t%d\t%d\t%s', order.price * Number(precision), order.size, order.owner == account.address ? "*" : "");
-        });
-    } else {
-        console.log('==== No Orders ====');
-    }
-
-    console.log();
+    
+    
+    console.log('Showing book for', await GetPoolName(), '\n');
 
     console.log("Sell Orders:");
 
     if (blockchainSellOrders.length > 0) {
         blockchainSellOrders.forEach(order => {
-            console.log('\t%d\t%d', order.price * Number(precision), order.size, order.owner == account.address ? "*" : "");
+            console.log('\t%d\t%d\t\t', order.price, order.size, order.owner == account.address ? "*" : "");
         });
     } else {
-        console.log('==== No Orders ====');
+        console.log('\n==== No Orders ====');
+    }
+
+    console.log('\n');
+
+    console.log("Buy Orders:");
+
+    if (blockchainBuyOrders.length > 0) {
+        blockchainBuyOrders.forEach(order => {
+            console.log('\t%d\t%d\t\t', order.price, order.size, order.owner == account.address ? "*" : "");
+        });
+    } else {
+        console.log('\n==== No Orders ====');
     }
 }
 
@@ -261,6 +275,8 @@ async function SettleAuction() {
 
     clearingInfo = Utils.CalculateClearingPrice(blockchainBuyOrders, blockchainSellOrders, minTickSize)
     clearingInfo.clearingPrice = BigInt(Math.round(Number(clearingInfo.clearingPrice) * Number(precision)))
+
+    // console.log(clearingInfo);
 
     await exchange.methods.clearingPriceConvertor(
         clearingInfo.clearingPrice, 
@@ -326,9 +342,9 @@ async function main() {
         '0x' + 'b0057716d5917badaf911b193b12b910811c1497b5bada8d7711f758981c3773'.toUpperCase()
     ]
 
-    account = web3.eth.accounts.privateKeyToAccount(accounts[process.env.ACCOUNT_INDEX ?? 0])
+    account = web3.eth.accounts.privateKeyToAccount(accounts[ACCOUNT_INDEX])
 
-    state = LoadState('state.json');
+    state = LoadState(STATE_FILE);
 
     program
         .name('FairTraDEX CLI')
@@ -373,7 +389,7 @@ async function main() {
         .addArgument(new commander.Argument('<side>').choices(['buy', 'sell']))
         .addArgument(new commander.Argument('<price>'))
         .addArgument(new commander.Argument('<quantity>'))
-        .addArgument(new commander.Argument('[maxTradeableWidth]').default(1000))
+        .addArgument(new commander.Argument('[maxTradeableWidth]').default(50000000000))
         .addArgument(new commander.Argument('[deposit]', "Deposit to commit order with."))
         .action(async (side, price, quantity, maxTradeableWidth) => {
             await CommitOrder(side, price, quantity, maxTradeableWidth);
@@ -430,16 +446,29 @@ async function main() {
             await SettleAuction();
         });
 
+    program
+        .command('account')
+        .description('Prints account details')
+        .action(async () => {
+            console.log('Using account ' + account.address);
+        });
+
     try {
         await program.parseAsync(process.argv);
-
-        fs.writeFileSync('state.json', JSON.stringify(state, (key, value) =>
-            typeof value === 'bigint'
-                ? value.toString()
-                : value // return everything else unchanged
-            , 2));
     } catch (e) {
         console.error(e)
+    } finally {
+
+        // state.unspentDeposits = state.unspentDeposits.filter(function (el) {
+        //     return el != null;
+        //   });
+
+
+        fs.writeFileSync(STATE_FILE, JSON.stringify(state, (key, value) =>
+        typeof value === 'bigint'
+            ? value.toString()
+            : value // return everything else unchanged
+        , 2));
     }
 
     process.exit(0)
